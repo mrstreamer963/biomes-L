@@ -1,1 +1,4 @@
 .opencode
+target/
+node_modules/
+dist/
