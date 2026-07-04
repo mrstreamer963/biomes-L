@@ -21,3 +21,6 @@
 * WebWorker -> SharedWorker 
 * транспорт
 * стратегии поведения группы
+
+git config --global user.email "698lo7epy@mozmail.com"
+git config --global user.name "mrstreamer963"
