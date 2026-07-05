@@ -4,27 +4,24 @@
 
 ## Requirements
 
-### Requirement: WASM функция greet
-Система SHALL предоставить функцию `greet()`, скомпилированную из Rust в WASM, возвращающую строку "Hello World from Rust!".
-
-#### Scenario: Вызов greet через wasm-bindgen
-- **WHEN** WebWorker загружает WASM-модуль и вызывает `greet()`
-- **THEN** функция возвращает строку "Hello World from Rust!"
-
 ### Requirement: WebWorker жизненный цикл
-Система SHALL создать WebWorker при старте Vue-приложения, загружающий WASM и вызывающий greet() автоматически.
+Система SHALL создать WebWorker при старте Vue-приложения, загружающий WASM. При `init` worker SHALL создавать сетку биомов по умолчанию (фиксированные `seed`, `width`, `height`) через `create_grid` и отправлять main thread'у сообщение `grid-snapshot` с snapshot'ом сетки.
 
-#### Scenario: Worker отправляет приветствие
-- **WHEN** WebWorker инициализирован и вызвал greet()
-- **THEN** worker отправляет main thread'у сообщение `{ type: "greeting", text: "Hello World from Rust!" }`
+#### Scenario: Worker отправляет snapshot сетки
+- **WHEN** WebWorker инициализирован и вызвал `create_grid` + `grid_snapshot`
+- **THEN** worker отправляет main thread'у сообщение `{ type: "grid-snapshot", width, height, biomes }`, где `biomes` — массив индексов биомов
+
+#### Scenario: Worker сообщает об ошибке движка
+- **WHEN** инициализация WASM или генерация сетки завершается ошибкой
+- **THEN** worker отправляет сообщение `{ type: "status", status: "error", error }`
 
 ### Requirement: Bridge-прокси
-Система SHALL предоставить типизированную обёртку `bridge/wasm.ts` для отправки и получения сообщений между main thread и worker.
+Система SHALL предоставить типизированную обёртку `bridge/wasm.ts` для отправки и получения сообщений между main thread и worker, включая новое сообщение `grid-snapshot`.
 
 #### Scenario: Отправка сообщения через bridge
 - **WHEN** main thread отправляет сообщение через bridge
 - **THEN** worker получает его и обрабатывает
 
-#### Scenario: Получение сообщения через bridge
-- **WHEN** worker отправляет ответное сообщение
-- **THEN** bridge доставляет его в main thread с правильным типом
+#### Scenario: Получение snapshot сетки через bridge
+- **WHEN** worker отправляет сообщение `grid-snapshot`
+- **THEN** bridge доставляет его в main thread с типизированными полями `width`, `height`, `biomes`
