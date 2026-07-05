@@ -1,7 +1,6 @@
-import init, { create_grid, grid_snapshot } from "../wasm/engine";
+import init, { create_grid, grid_snapshot, register_biome_definitions } from "../wasm/engine";
+import type { BiomeDefinition } from "../config/biomeConfig";
 
-// Default map configuration. Kept as module constants so the same seed is
-// used on every init — a page reload reproduces the same map.
 const DEFAULT_SEED = 42n;
 const DEFAULT_WIDTH = 32;
 const DEFAULT_HEIGHT = 32;
@@ -14,7 +13,13 @@ self.onmessage = async (e: MessageEvent) => {
       await init();
       ready = true;
 
+      const biomeDefinitions: BiomeDefinition[] = e.data.biomeDefinitions;
       const handle = create_grid(DEFAULT_SEED, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+
+      if (biomeDefinitions) {
+        register_biome_definitions(handle, biomeDefinitions);
+      }
+
       const snapshot = grid_snapshot(handle);
       if (snapshot === null) {
         throw new Error(`grid_snapshot returned null for handle ${handle}`);
@@ -24,7 +29,8 @@ self.onmessage = async (e: MessageEvent) => {
         type: "grid-snapshot",
         width: snapshot.width,
         height: snapshot.height,
-        biomes: snapshot.biomes,
+        biomeIds: snapshot.biomeIds,
+        resources: snapshot.resources,
       });
       self.postMessage({ type: "status", status: "ready" });
     } catch (err) {
@@ -37,7 +43,4 @@ self.onmessage = async (e: MessageEvent) => {
   }
 };
 
-// `ready` is exported for potential future ping/health messages; the value
-// is currently unused by main thread but kept to preserve the module's
-// health-check seam without expanding the message protocol now.
 export { ready };

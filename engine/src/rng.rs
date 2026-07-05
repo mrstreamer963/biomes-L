@@ -7,6 +7,7 @@
 //! fine for our "threshold per cell" use.
 
 /// A linear congruential generator over `u64` state.
+#[derive(Debug)]
 pub struct Lcg {
     state: u64,
 }

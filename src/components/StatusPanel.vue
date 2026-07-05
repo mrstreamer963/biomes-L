@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { useGridSnapshot, type BiomeCounts } from "../composables/useGridSnapshot";
+import { computed } from "vue";
+import { useGridSnapshot } from "../composables/useGridSnapshot";
 
-const { width, height, biomeCounts, status, error } = useGridSnapshot();
+const { width, height, biomeDefinitions, biomeCounts, status, error } = useGridSnapshot();
 
-const rows: Array<{ key: keyof BiomeCounts; label: string; swatch: string }> = [
-  { key: "plains", label: "Plains", swatch: "#7cba3a" },
-  { key: "forest", label: "Forest", swatch: "#2e6b2e" },
-  { key: "water", label: "Water", swatch: "#2f6fb0" },
-  { key: "mountain", label: "Mountain", swatch: "#8a8a8a" },
-];
+const rows = computed(() =>
+  biomeDefinitions.value.map((def, id) => ({
+    id,
+    label: def.name,
+    color: def.color,
+    count: biomeCounts.value[id] ?? 0,
+  }))
+);
+
+const colorToHex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 </script>
 
 <template>
@@ -26,10 +31,10 @@ const rows: Array<{ key: keyof BiomeCounts; label: string; swatch: string }> = [
     <div class="field" v-if="width > 0">
       <label>Biomes</label>
       <ul class="biome-list">
-        <li v-for="row in rows" :key="row.key">
-          <span class="swatch" :style="{ background: row.swatch }" />
+        <li v-for="row in rows" :key="row.id">
+          <span class="swatch" :style="{ background: colorToHex(row.color) }" />
           <span class="biome-name">{{ row.label }}</span>
-          <span class="biome-count">{{ biomeCounts[row.key] }}</span>
+          <span class="biome-count">{{ row.count }}</span>
         </li>
       </ul>
     </div>

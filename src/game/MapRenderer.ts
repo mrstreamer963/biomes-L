@@ -1,16 +1,11 @@
 import { Container, Graphics } from "pixi.js";
+import type { BiomeDefinition } from "../config/biomeConfig";
 
 export const TILE_SIZE = 32;
 
-export const BIOME_COLORS: Record<number, number> = {
-  0: 0x7ec850, // Plains
-  1: 0x2d5a27, // Forest
-  2: 0x3b82f6, // Water
-  3: 0x8b7355, // Mountain
-};
-
 export function createTileMap(
-  biomes: Uint8Array,
+  biomeIds: Uint16Array,
+  biomeDefinitions: BiomeDefinition[],
   width: number,
   height: number
 ): Container {
@@ -18,8 +13,9 @@ export function createTileMap(
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const biome = biomes[y * width + x];
-      const color = BIOME_COLORS[biome] ?? 0x000000;
+      const id = biomeIds[y * width + x];
+      const def = biomeDefinitions[id];
+      const color = def ? def.color : 0x000000;
 
       const tile = new Graphics();
       tile.rect(0, 0, TILE_SIZE, TILE_SIZE).fill({ color });

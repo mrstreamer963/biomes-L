@@ -7,9 +7,9 @@ import { MapCamera } from "../game/MapCamera";
 const container = ref<HTMLDivElement>();
 const isLoading = ref(true);
 
-const { width, height, biomes } = useGridSnapshot();
+const { width, height, biomeIds, biomeDefinitions } = useGridSnapshot();
 
-watch(biomes, (data) => {
+watch(biomeIds, (data) => {
   if (data) {
     isLoading.value = false;
   }
@@ -30,12 +30,12 @@ onMounted(async () => {
   let camera: MapCamera | null = null;
 
   watch(
-    () => biomes.value,
+    () => biomeIds.value,
     (data) => {
       if (!data || !width.value || !height.value) return;
 
       worldContainer.removeChildren();
-      const tileMap = createTileMap(data, width.value, height.value);
+      const tileMap = createTileMap(data, biomeDefinitions.value, width.value, height.value);
       worldContainer.addChild(tileMap);
 
       worldContainer.position.set(
