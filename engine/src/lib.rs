@@ -1,3 +1,4 @@
+pub mod noise;
 pub mod rng;
 
 pub mod ecs;

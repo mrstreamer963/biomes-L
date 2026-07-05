@@ -1,6 +1,6 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { createWasmBridge, type WorkerStatus } from "../bridge/wasm";
-import { DEFAULT_BIOME_DEFINITIONS, type BiomeDefinition } from "../config/biomeConfig";
+import { DEFAULT_BIOME_DEFINITIONS, DEFAULT_GENERATION_PARAMS, type BiomeDefinition } from "../config/biomeConfig";
 
 export type BiomeCounts = Record<number, number>;
 
@@ -42,7 +42,7 @@ export function useGridSnapshot() {
       }
     });
 
-    bridge.postMessage({ type: "init", biomeDefinitions: DEFAULT_BIOME_DEFINITIONS });
+    bridge.postMessage({ type: "init", biomeDefinitions: DEFAULT_BIOME_DEFINITIONS, generationParams: DEFAULT_GENERATION_PARAMS });
   });
 
   onUnmounted(() => {

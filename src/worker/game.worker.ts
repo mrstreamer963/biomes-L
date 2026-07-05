@@ -1,9 +1,9 @@
 import init, { create_grid, grid_snapshot, register_biome_definitions } from "../wasm/engine";
-import type { BiomeDefinition } from "../config/biomeConfig";
+import type { BiomeDefinition, GenerationParams } from "../config/biomeConfig";
+import { DEFAULT_GENERATION_PARAMS } from "../config/biomeConfig";
 
-const DEFAULT_SEED = 42n;
-const DEFAULT_WIDTH = 32;
-const DEFAULT_HEIGHT = 32;
+const DEFAULT_WIDTH = 256;
+const DEFAULT_HEIGHT = 256;
 
 let ready = false;
 
@@ -14,7 +14,8 @@ self.onmessage = async (e: MessageEvent) => {
       ready = true;
 
       const biomeDefinitions: BiomeDefinition[] = e.data.biomeDefinitions;
-      const handle = create_grid(DEFAULT_SEED, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+      const generationParams: GenerationParams = e.data.generationParams ?? DEFAULT_GENERATION_PARAMS;
+      const handle = create_grid(generationParams, DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
       if (biomeDefinitions) {
         register_biome_definitions(handle, biomeDefinitions);

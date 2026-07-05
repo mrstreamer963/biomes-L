@@ -17,11 +17,22 @@ export interface CellData {
   resources: number;
 }
 
+export interface GenerationParams {
+  seed: bigint;
+  scale?: number;
+  octaves?: number;
+  persistence?: number;
+  lacunarity?: number;
+  elevationLow?: number;
+  elevationHigh?: number;
+  moistureHigh?: number;
+}
+
 export default function init(module_or_path?: InitInput | Promise<InitInput>): Promise<InitOutput>;
 
 export function initSync(module: InitInput): InitOutput;
 
-export function create_grid(seed: bigint, width: number, height: number): number;
+export function create_grid(params: GenerationParams, width: number, height: number): number;
 export function register_biome_definitions(handle: number, definitions: BiomeDefinition[]): boolean;
 export function biome_definitions(handle: number): BiomeDefinition[] | null;
 export function grid_snapshot(handle: number): GridSnapshot | null;

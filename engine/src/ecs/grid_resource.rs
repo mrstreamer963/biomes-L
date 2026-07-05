@@ -1,23 +1,18 @@
-use bevy_ecs::entity::Entity;
-use bevy_ecs::prelude::Resource;
-
-use crate::rng::Lcg;
-
-#[derive(Debug, Resource)]
+#[derive(Debug)]
 pub struct GridResource {
     pub width: u32,
     pub height: u32,
-    pub entities: Vec<Entity>,
-    pub rng: Lcg,
+    pub biome_ids: Vec<u16>,
+    pub resources: Vec<u8>,
 }
 
 impl GridResource {
-    pub fn new(width: u32, height: u32, entities: Vec<Entity>, rng: Lcg) -> Self {
+    pub fn new(width: u32, height: u32, biome_ids: Vec<u16>, resources: Vec<u8>) -> Self {
         Self {
             width,
             height,
-            entities,
-            rng,
+            biome_ids,
+            resources,
         }
     }
 }

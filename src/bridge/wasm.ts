@@ -1,4 +1,4 @@
-import type { BiomeDefinition } from "../config/biomeConfig";
+import type { BiomeDefinition, GenerationParams } from "../config/biomeConfig";
 
 export type WorkerStatus = "loading" | "ready" | "error";
 
@@ -6,7 +6,7 @@ export type WorkerMessage =
   | { type: "grid-snapshot"; width: number; height: number; biomeIds: Uint16Array; resources: Uint8Array }
   | { type: "status"; status: WorkerStatus; error?: string };
 
-export type MainMessage = { type: "init"; biomeDefinitions: BiomeDefinition[] };
+export type MainMessage = { type: "init"; biomeDefinitions: BiomeDefinition[]; generationParams: GenerationParams };
 
 export interface WasmBridge {
   postMessage(msg: MainMessage): void;

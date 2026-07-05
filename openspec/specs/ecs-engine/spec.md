@@ -23,7 +23,7 @@ TBD — ECS-движок на базе bevy_ecs для управления иг
 
 ### Requirement: GridResource как точка входа
 
-Система SHALL хранить `GridResource { width: u32, height: u32, entities: Vec<Entity>, rng: Lcg }` как bevy_ecs Resource для доступа к структуре карты.
+Система SHALL хранить `GridResource { width: u32, height: u32, entities: Vec<Entity> }` как bevy_ecs Resource для доступа к структуре карты.
 
 #### Scenario: Доступ к GridResource
 
@@ -32,9 +32,14 @@ TBD — ECS-движок на базе bevy_ecs для управления иг
 
 ### Requirement: Генерация карты через системы
 
-Система SHALL заменить `Grid::generate()` на ECS-системы генерации, использующие `Commands::spawn()` для создания Entity.
+Система SHALL заменить `biome_id_from_lcg_value()` на noise-функцию, использующую Perlin noise (FBM) с двумя слоями (elevation + moisture). Система генерации SHALL принимать `GenerationParams` для настройки параметров шума и порогов маппинга. Генерация SHALL использовать `Commands::spawn()` для создания Entity.
 
-#### Scenario: Система генерации
+#### Scenario: Система генерации с noise
 
-- **WHEN** World создан и инициализирован seed
-- **THEN** система итеративно создаёт Entity для каждой клетки, присваивая BiomeId на основе LCG (аналогично текущей логике)
+- **WHEN** World создан и инициализирован с `GenerationParams`
+- **THEN** система создаёт Entity для каждой клетки, присваивая `BiomeId` на основе elevation/moisture noise и пороговых значений
+
+#### Scenario: Детерминизм генерации
+
+- **WHEN** две системы запускаются с одинаковым seed и параметрами
+- **THEN** все Entity имеют идентичные `BiomeId` на соответствующих координатах
