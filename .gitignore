@@ -6,3 +6,4 @@ dist/
 .env
 *.wasm
 opencode.json
+.DS_Store
