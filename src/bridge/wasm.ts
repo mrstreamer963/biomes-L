@@ -1,7 +1,7 @@
 export type WorkerStatus = "loading" | "ready" | "error";
 
 export type WorkerMessage =
-  | { type: "greeting"; text: string }
+  | { type: "grid-snapshot"; width: number; height: number; biomes: Uint8Array }
   | { type: "status"; status: WorkerStatus; error?: string };
 
 export type MainMessage = { type: "init" };

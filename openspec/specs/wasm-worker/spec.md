@@ -11,7 +11,7 @@
 - **WHEN** WebWorker загружает WASM-модуль и вызывает `greet()`
 - **THEN** функция возвращает строку "Hello World from Rust!"
 
-### Requirement: WebWorker生命周期
+### Requirement: WebWorker жизненный цикл
 Система SHALL создать WebWorker при старте Vue-приложения, загружающий WASM и вызывающий greet() автоматически.
 
 #### Scenario: Worker отправляет приветствие
