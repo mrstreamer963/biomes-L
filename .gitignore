@@ -4,4 +4,4 @@ node_modules/
 dist/
 .claude
 .env
-.wasm
+*.wasm
