@@ -3,11 +3,12 @@ import { ref, watch, onMounted } from "vue";
 import { useGridSnapshot } from "../composables/useGridSnapshot";
 import { createTileMap } from "../game/MapRenderer";
 import { MapCamera } from "../game/MapCamera";
+import { UnitManager } from "../game/UnitManager";
 
 const container = ref<HTMLDivElement>();
 const isLoading = ref(true);
 
-const { width, height, biomeIds, biomeDefinitions } = useGridSnapshot();
+const { width, height, biomeIds, biomeDefinitions, units, selectedUnitId, selectUnit, clearSelection, sendMoveCommand } = useGridSnapshot();
 
 watch(biomeIds, (data) => {
   if (data) {
@@ -24,10 +25,49 @@ onMounted(async () => {
   });
   container.value!.appendChild(app.canvas as HTMLCanvasElement);
 
+  const canvas = app.canvas as HTMLCanvasElement;
   const worldContainer = new Container();
   app.stage.addChild(worldContainer);
 
   let camera: MapCamera | null = null;
+  let unitManager: UnitManager | null = null;
+
+  // Drag detection state (to distinguish click from pan)
+  let pointerDownPos = { x: 0, y: 0 };
+  let isDragging = false;
+
+  canvas.addEventListener("pointerdown", (e: PointerEvent) => {
+    pointerDownPos = { x: e.clientX, y: e.clientY };
+    isDragging = false;
+  });
+
+  canvas.addEventListener("pointermove", (e: PointerEvent) => {
+    const dx = e.clientX - pointerDownPos.x;
+    const dy = e.clientY - pointerDownPos.y;
+    if (Math.sqrt(dx * dx + dy * dy) > 5) {
+      isDragging = true;
+    }
+  });
+
+  canvas.addEventListener("pointerup", (e: PointerEvent) => {
+    if (isDragging || !unitManager) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    const worldX = (screenX - worldContainer.position.x) / worldContainer.scale.x;
+    const worldY = (screenY - worldContainer.position.y) / worldContainer.scale.y;
+
+    // Hit test units first
+    const hit = unitManager.hitTest(worldX, worldY);
+    if (hit) {
+      selectUnit(hit.unitId);
+    } else if (selectedUnitId.value !== null) {
+      sendMoveCommand(selectedUnitId.value, worldX, worldY);
+      clearSelection();
+    }
+  });
 
   watch(
     () => biomeIds.value,
@@ -38,13 +78,30 @@ onMounted(async () => {
       const tileMap = createTileMap(data, biomeDefinitions.value, width.value, height.value);
       worldContainer.addChild(tileMap);
 
-      worldContainer.position.set(
-        (app.screen.width - width.value * 32) / 2,
-        (app.screen.height - height.value * 32) / 2
-      );
+      unitManager = new UnitManager();
+      worldContainer.addChild(unitManager.container);
 
       camera?.destroy();
-      camera = new MapCamera(worldContainer, app.canvas as HTMLCanvasElement);
+      camera = new MapCamera(worldContainer, canvas);
+    }
+  );
+
+  watch(
+    () => units.value,
+    (data) => {
+      if (unitManager && data) {
+        unitManager.update(data, selectedUnitId.value);
+      }
+    },
+    { deep: false }
+  );
+
+  watch(
+    () => selectedUnitId.value,
+    () => {
+      if (unitManager && units.value) {
+        unitManager.update(units.value, selectedUnitId.value);
+      }
     }
   );
 });

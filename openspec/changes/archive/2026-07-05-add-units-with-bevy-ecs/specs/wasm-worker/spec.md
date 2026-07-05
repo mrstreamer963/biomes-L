@@ -1,8 +1,4 @@
-## Purpose
-
-Обеспечить выполнение Rust-кода в браузере через WASM и WebWorker.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Tick сообщение bridge
 
@@ -38,6 +34,8 @@ Worker SHALL после инициализации:
 
 - **WHEN** worker инициализирован и готов
 - **THEN** worker не запускает свой цикл, а ожидает tick сообщения от main thread
+
+## MODIFIED Requirements
 
 ### Requirement: WebWorker жизненный цикл
 

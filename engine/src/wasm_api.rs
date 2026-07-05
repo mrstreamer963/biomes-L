@@ -2,17 +2,42 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use bevy_ecs::prelude::{Entity, World};
+use bevy_ecs::schedule::Schedule;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
 use crate::ecs::*;
+use crate::ecs::systems::movement_system;
+use crate::ecs::pathfinding::{find_path, pixel_to_tile, tile_to_pixel};
 use crate::noise;
 
 static NEXT_HANDLE: AtomicU32 = AtomicU32::new(1);
+static NEXT_UNIT_ID: AtomicU32 = AtomicU32::new(1);
 
 struct GridStore {
     grid: GridResource,
     definitions: Option<BiomeDefinitions>,
+    world: World,
+    schedule: Schedule,
+    unit_map: HashMap<u32, Entity>,
+}
+
+impl GridStore {
+    fn new(grid: GridResource) -> Self {
+        let mut world = World::new();
+        world.insert_resource(GameTime::new());
+        let mut schedule = Schedule::default();
+        schedule.add_systems(movement_system);
+
+        Self {
+            grid,
+            definitions: None,
+            world,
+            schedule,
+            unit_map: HashMap::new(),
+        }
+    }
 }
 
 thread_local! {
@@ -51,14 +76,9 @@ pub fn create_grid(params: JsValue, width: u32, height: u32) -> u32 {
     }
 
     let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+    let grid = GridResource::new(width, height, biome_ids, resources);
     STORE.with(|s| {
-        s.borrow_mut().insert(
-            handle,
-            GridStore {
-                grid: GridResource::new(width, height, biome_ids, resources),
-                definitions: None,
-            },
-        )
+        s.borrow_mut().insert(handle, GridStore::new(grid));
     });
     handle
 }
@@ -72,7 +92,16 @@ pub fn register_biome_definitions(handle: u32, definitions: JsValue) -> bool {
         };
         match serde_wasm_bindgen::from_value::<Vec<BiomeDef>>(definitions) {
             Ok(defs) => {
-                store.definitions = Some(BiomeDefinitions::new(defs));
+                let biome_defs = BiomeDefinitions::new(defs);
+                store.world.insert_resource(biome_defs.clone());
+                store.definitions = Some(biome_defs);
+                // Also insert grid as resource
+                store.world.insert_resource(GridResource {
+                    width: store.grid.width,
+                    height: store.grid.height,
+                    biome_ids: store.grid.biome_ids.clone(),
+                    resources: store.grid.resources.clone(),
+                });
                 true
             }
             Err(_) => false,
@@ -143,4 +172,269 @@ fn cell_obj(biome: u8, resources: u8) -> JsValue {
     js_sys::Reflect::set(&obj, &"biome".into(), &(biome as f64).into()).unwrap();
     js_sys::Reflect::set(&obj, &"resources".into(), &(resources as f64).into()).unwrap();
     obj.into()
+}
+
+// ─── Unit API ─────────────────────────────────────────────────────────────────
+
+#[wasm_bindgen]
+pub fn create_unit(handle: u32, x: f64, y: f64, unit_type: &str) -> u32 {
+    STORE.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(store) = s.get_mut(&handle) else {
+            return 0;
+        };
+
+        let unit_id = NEXT_UNIT_ID.fetch_add(1, Ordering::Relaxed);
+
+        let (base_speed, unit_kind) = match unit_type {
+            "Soldier" => (80.0, UnitKind::Soldier),
+            _ => (140.0, UnitKind::Scout),
+        };
+
+        let entity = store.world.spawn((
+            Position { x, y },
+            MovementTarget(None),
+            Path(Vec::new()),
+            BaseSpeed(base_speed),
+            MovementStatus::default(),
+            Health(100, 100),
+            Team(0),
+            unit_kind,
+            Selected(false),
+        )).id();
+
+        store.unit_map.insert(unit_id, entity);
+        unit_id
+    })
+}
+
+#[wasm_bindgen]
+pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
+    STORE.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(store) = s.get_mut(&handle) else {
+            return;
+        };
+
+        if let Some(&entity) = store.unit_map.get(&unit_id) {
+            // Get unit's current position
+            let pos = match store.world.get::<Position>(entity) {
+                Some(p) => *p,
+                None => return,
+            };
+
+            // Convert to tile coordinates
+            let start = pixel_to_tile(pos.x, pos.y);
+            let end = pixel_to_tile(x, y);
+
+            // Get grid and definitions for pathfinding
+            let grid = store.world.get_resource::<GridResource>().unwrap();
+            let defs = store.world.get_resource::<BiomeDefinitions>().unwrap();
+
+            // Find path
+            let path_cells = find_path(&grid, &defs, start, end);
+
+            if let Some(cells) = path_cells {
+                // Convert path cells to pixel waypoints
+                let waypoints: Vec<(f64, f64)> = if cells.len() <= 1 {
+                    // Direct path — just use the target
+                    vec![(x, y)]
+                } else {
+                    cells
+                        .iter()
+                        .skip(1) // Skip the starting cell
+                        .map(|&(c, r)| tile_to_pixel(c, r))
+                        .collect()
+                };
+
+                // Set the last waypoint as the movement target
+                if let Some(&last) = waypoints.last() {
+                    if let Some(mut target) = store.world.get_mut::<MovementTarget>(entity) {
+                        target.0 = Some(last);
+                    }
+                }
+
+                // Set the path
+                if let Some(mut path) = store.world.get_mut::<Path>(entity) {
+                    path.0 = waypoints;
+                }
+            } else {
+                // No path found — clear target and path
+                if let Some(mut target) = store.world.get_mut::<MovementTarget>(entity) {
+                    target.0 = None;
+                }
+                if let Some(mut path) = store.world.get_mut::<Path>(entity) {
+                    path.0.clear();
+                }
+            }
+        }
+    })
+}
+
+#[wasm_bindgen]
+pub fn set_unit_selected(handle: u32, unit_id: u32, selected: bool) {
+    STORE.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(store) = s.get_mut(&handle) else {
+            return;
+        };
+
+        if let Some(&entity) = store.unit_map.get(&unit_id) {
+            if let Some(mut sel) = store.world.get_mut::<Selected>(entity) {
+                sel.0 = selected;
+            }
+        }
+    })
+}
+
+#[derive(serde::Serialize)]
+struct UnitSnapshot {
+    id: u32,
+    x: f64,
+    y: f64,
+    health: u32,
+    max_health: u32,
+    unit_type: String,
+    team: u8,
+    selected: bool,
+}
+
+#[wasm_bindgen]
+pub fn tick(handle: u32, dt: f64) -> JsValue {
+    STORE.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(store) = s.get_mut(&handle) else {
+            return JsValue::NULL;
+        };
+
+        // Update game time
+        store.world.insert_resource(GameTime { delta: dt });
+
+        // Run ECS systems
+        store.schedule.run(&mut store.world);
+
+        // Build snapshot
+        let mut snapshots: Vec<UnitSnapshot> = Vec::new();
+        for (&id, &entity) in &store.unit_map {
+            let pos = store.world.get::<Position>(entity).unwrap();
+            let health = store.world.get::<Health>(entity).unwrap();
+            let kind = store.world.get::<UnitKind>(entity).unwrap();
+            let team = store.world.get::<Team>(entity).unwrap();
+            let selected = store.world.get::<Selected>(entity).unwrap();
+
+            snapshots.push(UnitSnapshot {
+                id,
+                x: pos.x,
+                y: pos.y,
+                health: health.0,
+                max_health: health.1,
+                unit_type: match kind {
+                    UnitKind::Scout => "Scout".to_string(),
+                    UnitKind::Soldier => "Soldier".to_string(),
+                },
+                team: team.0,
+                selected: selected.0,
+            });
+        }
+
+        serde_wasm_bindgen::to_value(&snapshots).unwrap_or(JsValue::NULL)
+    })
+}
+
+#[wasm_bindgen]
+pub fn spawn_starting_units(handle: u32) {
+    STORE.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(store) = s.get_mut(&handle) else {
+            return;
+        };
+
+        let cx = (store.grid.width as f64 * 32.0) / 2.0;
+        let cy = (store.grid.height as f64 * 32.0) / 2.0;
+        let center_col = (store.grid.width / 2) as usize;
+        let center_row = (store.grid.height / 2) as usize;
+
+        // Find a passable cell near center for spawning
+        let mut spawn_x = cx;
+        let mut spawn_y = cy;
+        let mut found = false;
+
+        let radius = 5i32;
+        'search: for dr in -radius..=radius {
+            for dc in -radius..=radius {
+                let r = (center_row as i32 + dr).max(0).min(store.grid.height as i32 - 1) as usize;
+                let c = (center_col as i32 + dc).max(0).min(store.grid.width as i32 - 1) as usize;
+                let idx = r * (store.grid.width as usize) + c;
+                let biome_id = store.grid.biome_ids.get(idx).copied().unwrap_or(0);
+                let passable = store.definitions.as_ref()
+                    .and_then(|d| d.definitions.get(biome_id as usize))
+                    .map(|d| d.passable)
+                    .unwrap_or(true);
+                if passable {
+                    spawn_x = c as f64 * 32.0 + 16.0;
+                    spawn_y = r as f64 * 32.0 + 16.0;
+                    found = true;
+                    break 'search;
+                }
+            }
+        }
+
+        if !found {
+            spawn_x = cx;
+            spawn_y = cy;
+        }
+
+        let unit_id_1 = NEXT_UNIT_ID.fetch_add(1, Ordering::Relaxed);
+        let unit_id_2 = NEXT_UNIT_ID.fetch_add(1, Ordering::Relaxed);
+        let unit_id_3 = NEXT_UNIT_ID.fetch_add(1, Ordering::Relaxed);
+
+        let e1 = store.world.spawn((
+            Position { x: spawn_x - 20.0, y: spawn_y },
+            MovementTarget(None),
+            Path(Vec::new()),
+            BaseSpeed(140.0),
+            MovementStatus::default(),
+            Health(80, 80),
+            Team(0),
+            UnitKind::Scout,
+            Selected(false),
+        )).id();
+        let e2 = store.world.spawn((
+            Position { x: spawn_x + 20.0, y: spawn_y },
+            MovementTarget(None),
+            Path(Vec::new()),
+            BaseSpeed(140.0),
+            MovementStatus::default(),
+            Health(80, 80),
+            Team(0),
+            UnitKind::Scout,
+            Selected(false),
+        )).id();
+        let e3 = store.world.spawn((
+            Position { x: spawn_x, y: spawn_y - 25.0 },
+            MovementTarget(None),
+            Path(Vec::new()),
+            BaseSpeed(80.0),
+            MovementStatus::default(),
+            Health(150, 150),
+            Team(0),
+            UnitKind::Soldier,
+            Selected(false),
+        )).id();
+
+        store.unit_map.insert(unit_id_1, e1);
+        store.unit_map.insert(unit_id_2, e2);
+        store.unit_map.insert(unit_id_3, e3);
+    })
+}
+
+#[wasm_bindgen]
+pub fn unit_count(handle: u32) -> u32 {
+    STORE.with(|s| {
+        let s = s.borrow();
+        let Some(store) = s.get(&handle) else {
+            return 0;
+        };
+        store.unit_map.len() as u32
+    })
 }

@@ -1,11 +1,12 @@
-import init, { create_grid, grid_snapshot, register_biome_definitions } from "../wasm/engine";
+import init, { create_grid, grid_snapshot, register_biome_definitions, spawn_starting_units, tick, set_unit_target } from "../wasm/engine";
 import type { BiomeDefinition, GenerationParams } from "../config/biomeConfig";
 import { DEFAULT_GENERATION_PARAMS } from "../config/biomeConfig";
 
-const DEFAULT_WIDTH = 256;
-const DEFAULT_HEIGHT = 256;
+const DEFAULT_WIDTH = 50;
+const DEFAULT_HEIGHT = 50;
 
 let ready = false;
+let handle = 0;
 
 self.onmessage = async (e: MessageEvent) => {
   if (e.data.type === "init") {
@@ -15,7 +16,7 @@ self.onmessage = async (e: MessageEvent) => {
 
       const biomeDefinitions: BiomeDefinition[] = e.data.biomeDefinitions;
       const generationParams: GenerationParams = e.data.generationParams ?? DEFAULT_GENERATION_PARAMS;
-      const handle = create_grid(generationParams, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+      handle = create_grid(generationParams, DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
       if (biomeDefinitions) {
         register_biome_definitions(handle, biomeDefinitions);
@@ -33,6 +34,10 @@ self.onmessage = async (e: MessageEvent) => {
         biomeIds: snapshot.biomeIds,
         resources: snapshot.resources,
       });
+
+      // Spawn starting units after grid is initialized
+      spawn_starting_units(handle);
+
       self.postMessage({ type: "status", status: "ready" });
     } catch (err) {
       self.postMessage({
@@ -41,6 +46,16 @@ self.onmessage = async (e: MessageEvent) => {
         error: String(err),
       });
     }
+  } else if (e.data.type === "tick") {
+    if (handle === 0) return;
+    const dt = e.data.dt;
+    const units = tick(handle, dt);
+    if (units) {
+      self.postMessage({ type: "unit-snapshot", units });
+    }
+  } else if (e.data.type === "set-unit-target") {
+    if (handle === 0) return;
+    set_unit_target(handle, e.data.unitId, e.data.x, e.data.y);
   }
 };
 

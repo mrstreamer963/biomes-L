@@ -1,8 +1,4 @@
-## Purpose
-
-ECS-движок на базе bevy_ecs для управления игровым состоянием.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: World с Entity-компонентной моделью
 

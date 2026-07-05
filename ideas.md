@@ -24,3 +24,8 @@
 
 git config --global user.email "698lo7epy@mozmail.com"
 git config --global user.name "mrstreamer963"
+
+
+
+
+try Qwen3.6-4B-UD-Q8_K_XL

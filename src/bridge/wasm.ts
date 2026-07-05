@@ -1,12 +1,17 @@
 import type { BiomeDefinition, GenerationParams } from "../config/biomeConfig";
+import type { UnitData } from "../wasm/engine";
 
 export type WorkerStatus = "loading" | "ready" | "error";
 
 export type WorkerMessage =
   | { type: "grid-snapshot"; width: number; height: number; biomeIds: Uint16Array; resources: Uint8Array }
-  | { type: "status"; status: WorkerStatus; error?: string };
+  | { type: "status"; status: WorkerStatus; error?: string }
+  | { type: "unit-snapshot"; units: UnitData[] };
 
-export type MainMessage = { type: "init"; biomeDefinitions: BiomeDefinition[]; generationParams: GenerationParams };
+export type MainMessage =
+  | { type: "init"; biomeDefinitions: BiomeDefinition[]; generationParams: GenerationParams }
+  | { type: "tick"; dt: number }
+  | { type: "set-unit-target"; unitId: number; x: number; y: number };
 
 export interface WasmBridge {
   postMessage(msg: MainMessage): void;

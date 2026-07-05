@@ -31,6 +31,20 @@ export function create_grid(params, width, height) {
 
 /**
  * @param {number} handle
+ * @param {number} x
+ * @param {number} y
+ * @param {string} unit_type
+ * @returns {number}
+ */
+export function create_unit(handle, x, y, unit_type) {
+    const ptr0 = passStringToWasm0(unit_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.create_unit(handle, x, y, ptr0, len0);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} handle
  * @returns {any}
  */
 export function grid_snapshot(handle) {
@@ -46,6 +60,51 @@ export function grid_snapshot(handle) {
 export function register_biome_definitions(handle, definitions) {
     const ret = wasm.register_biome_definitions(handle, definitions);
     return ret !== 0;
+}
+
+/**
+ * @param {number} handle
+ * @param {number} unit_id
+ * @param {boolean} selected
+ */
+export function set_unit_selected(handle, unit_id, selected) {
+    wasm.set_unit_selected(handle, unit_id, selected);
+}
+
+/**
+ * @param {number} handle
+ * @param {number} unit_id
+ * @param {number} x
+ * @param {number} y
+ */
+export function set_unit_target(handle, unit_id, x, y) {
+    wasm.set_unit_target(handle, unit_id, x, y);
+}
+
+/**
+ * @param {number} handle
+ */
+export function spawn_starting_units(handle) {
+    wasm.spawn_starting_units(handle);
+}
+
+/**
+ * @param {number} handle
+ * @param {number} dt
+ * @returns {any}
+ */
+export function tick(handle, dt) {
+    const ret = wasm.tick(handle, dt);
+    return ret;
+}
+
+/**
+ * @param {number} handle
+ * @returns {number}
+ */
+export function unit_count(handle) {
+    const ret = wasm.unit_count(handle);
+    return ret >>> 0;
 }
 function __wbg_get_imports() {
     const import0 = {

@@ -1,3 +1,4 @@
+use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9,7 +10,7 @@ pub struct BiomeDef {
     pub color: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Resource)]
 pub struct BiomeDefinitions {
     pub definitions: Vec<BiomeDef>,
 }

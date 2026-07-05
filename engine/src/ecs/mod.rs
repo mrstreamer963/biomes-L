@@ -1,10 +1,32 @@
+use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
 pub mod grid_resource;
 pub mod biome_definitions;
+pub mod components;
+pub mod systems;
+pub mod pathfinding;
 
 pub use grid_resource::GridResource;
 pub use biome_definitions::{BiomeDef, BiomeDefinitions};
+pub use components::*;
+
+#[derive(Debug, Resource)]
+pub struct GameTime {
+    pub delta: f64,
+}
+
+impl GameTime {
+    pub fn new() -> Self {
+        Self { delta: 0.0 }
+    }
+}
+
+impl Default for GameTime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct GenerationParams {
