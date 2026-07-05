@@ -1,7 +1,7 @@
+.claude
 .opencode
 target/
 node_modules/
 dist/
-.claude
 .env
 *.wasm
