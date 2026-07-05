@@ -23,6 +23,12 @@ pub struct GenerationParams {
     pub elevation_high: f64,
     #[serde(default = "default_moisture_high")]
     pub moisture_high: f64,
+    #[serde(default = "default_elevation_very_low")]
+    pub elevation_very_low: f64,
+    #[serde(default = "default_elevation_sand_max")]
+    pub elevation_sand_max: f64,
+    #[serde(default = "default_elevation_very_high")]
+    pub elevation_very_high: f64,
 }
 
 impl GenerationParams {
@@ -36,6 +42,9 @@ impl GenerationParams {
             elevation_low: default_elevation_low(),
             elevation_high: default_elevation_high(),
             moisture_high: default_moisture_high(),
+            elevation_very_low: default_elevation_very_low(),
+            elevation_sand_max: default_elevation_sand_max(),
+            elevation_very_high: default_elevation_very_high(),
         }
     }
 }
@@ -47,10 +56,19 @@ fn default_lacunarity() -> f64 { 2.0 }
 fn default_elevation_low() -> f64 { 0.30 }
 fn default_elevation_high() -> f64 { 0.70 }
 fn default_moisture_high() -> f64 { 0.50 }
+fn default_elevation_very_low() -> f64 { 0.28 }
+fn default_elevation_sand_max() -> f64 { 0.34 }
+fn default_elevation_very_high() -> f64 { 0.72 }
 
 pub fn biome_from_noise(elevation: f64, moisture: f64, params: &GenerationParams) -> u16 {
-    if elevation < params.elevation_low {
+    if elevation < params.elevation_very_low {
+        4
+    } else if elevation < params.elevation_low {
         2
+    } else if elevation < params.elevation_sand_max {
+        5
+    } else if elevation >= params.elevation_very_high {
+        6
     } else if elevation > params.elevation_high {
         3
     } else if moisture > params.moisture_high {
@@ -58,6 +76,42 @@ pub fn biome_from_noise(elevation: f64, moisture: f64, params: &GenerationParams
     } else {
         0
     }
+}
+
+/// Генерирует сетку биомов заданного размера на основе шума и параметров генерации.
+pub fn generate_grid_biomes(seed: u64, width: u32, height: u32) -> Vec<u16> {
+    let params = GenerationParams::new(seed);
+    let elevation_noise = crate::noise::Noise::new(seed as i32);
+    let moisture_noise = crate::noise::Noise::new(seed.wrapping_add(1000) as i32);
+
+    let total_cells = (width as usize) * (height as usize);
+    let mut biomes = Vec::with_capacity(total_cells);
+
+    let denom_x = width.max(1) as f64;
+    let denom_y = height.max(1) as f64;
+
+    for y in 0..height {
+        for x in 0..width {
+            let nx = x as f64 / denom_x;
+            let ny = y as f64 / denom_y;
+
+            // Нормализуем шум из диапазона [-1.0; 1.0] в диапазон [0.0; 1.0]
+            let elevation = (elevation_noise.fbm(
+                nx, ny,
+                params.octaves, params.lacunarity, params.persistence,
+                params.scale,
+            ) + 1.0) / 2.0;
+
+            let moisture = (moisture_noise.fbm(
+                nx, ny,
+                params.octaves, params.lacunarity, params.persistence,
+                params.scale,
+            ) + 1.0) / 2.0;
+
+            biomes.push(biome_from_noise(elevation, moisture, &params));
+        }
+    }
+    biomes
 }
 
 #[deprecated(note = "Use noise-based generation via biome_from_noise instead")]
@@ -73,7 +127,6 @@ pub fn biome_id_from_lcg_value(v: u32) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::noise;
 
     #[test]
     fn generate_is_reproducible() {
@@ -93,32 +146,30 @@ mod tests {
     fn biome_ids_in_valid_range() {
         let biomes = generate_grid_biomes(7, 10, 10);
         for id in &biomes {
-            assert!(*id <= 3, "biome_id {} out of expected range", id);
+            assert!(*id <= 6, "biome_id {} out of expected range", id);
         }
     }
 
-    fn generate_grid_biomes(seed: u64, width: u32, height: u32) -> Vec<u16> {
-        let params = GenerationParams::new(seed);
-        let elevation_noise = noise::Noise::new(seed as i32);
-        let moisture_noise = noise::Noise::new(seed.wrapping_add(1000) as i32);
-        let mut biomes = Vec::with_capacity((width as usize) * (height as usize));
-        for y in 0..height {
-            for x in 0..width {
-                let nx = x as f64 / width.max(1) as f64;
-                let ny = y as f64 / height.max(1) as f64;
-                let elevation = (elevation_noise.fbm(
-                    nx, ny,
-                    params.octaves, params.lacunarity, params.persistence,
-                    params.scale,
-                ) + 1.0) / 2.0;
-                let moisture = (moisture_noise.fbm(
-                    nx, ny,
-                    params.octaves, params.lacunarity, params.persistence,
-                    params.scale,
-                ) + 1.0) / 2.0;
-                biomes.push(biome_from_noise(elevation, moisture, &params));
-            }
-        }
-        biomes
+    #[test]
+    fn biome_sand_is_generated() {
+        // Sand должна появляться как прибрежная полоса между Water и Plains
+        let biomes = generate_grid_biomes(42, 256, 256);
+        let has_sand = biomes.iter().any(|&id| id == 5);
+        assert!(has_sand, "Sand (ID 5) должна быть сгенерирована на карте 256x256");
     }
-}
+
+    #[test]
+    fn biome_deep_water_is_generated() {
+        let biomes = generate_grid_biomes(42, 256, 256);
+        let has_dw = biomes.iter().any(|&id| id == 4);
+        assert!(has_dw, "Deep Water (ID 4) должна быть сгенерирована на карте 256x256");
+    }
+
+    #[test]
+    fn biome_high_mountain_is_generated() {
+        let biomes = generate_grid_biomes(42, 256, 256);
+        let has_hm = biomes.iter().any(|&id| id == 6);
+        assert!(has_hm, "High Mountain (ID 6) должна быть сгенерирована на карте 256x256");
+    }
+
+    }
