@@ -5,9 +5,11 @@ import { useGridSnapshot } from "../composables/useGridSnapshot";
 const { width, height, biomeDefinitions, biomeCounts, status, error, units, selectedUnitId, toggleDebug } = useGridSnapshot();
 
 const selectedDebug = computed(() => {
-  if (selectedUnitId.value === null) return false;
-  const unit = units.value?.find((u) => u.id === selectedUnitId.value);
-  return unit?.debug ?? false;
+  if (selectedUnitId.value !== null) {
+    const unit = units.value?.find((u) => u.id === selectedUnitId.value);
+    return unit?.debug ?? false;
+  }
+  return units.value?.some((u) => u.debug) ?? false;
 });
 
 const rows = computed(() =>
@@ -48,10 +50,9 @@ const colorToHex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
     <div class="field">
       <label>Debug</label>
       <label class="debug-toggle">
-        <input type="checkbox" :checked="selectedDebug" :disabled="selectedUnitId === null" @change="selectedUnitId !== null && toggleDebug(selectedUnitId)" />
+        <input type="checkbox" :checked="selectedDebug" @change="toggleDebug(selectedUnitId)" />
         Show waypoints and target
       </label>
-      <div v-if="selectedUnitId === null" class="hint">Select a unit first</div>
     </div>
 
     <div class="worker-status">

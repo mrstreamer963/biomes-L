@@ -18,7 +18,7 @@ export interface GridSnapshotState {
   selectUnit: (unitId: number) => void;
   clearSelection: () => void;
   sendMoveCommand: (unitId: number, x: number, y: number) => void;
-  toggleDebug: (unitId: number) => void;
+  toggleDebug: (unitId: number | null) => void;
 }
 
 let instance: GridSnapshotState | null = null;
@@ -88,10 +88,17 @@ export function createGridSnapshot(): GridSnapshotState {
     bridge?.postMessage({ type: "set-unit-target", unitId, x, y });
   }
 
-  function toggleDebug(unitId: number) {
-    const unit = units.value?.find((u) => u.id === unitId);
-    if (unit) {
-      bridge?.postMessage({ type: "set-unit-debug", unitId, debug: !unit.debug });
+  function toggleDebug(unitId: number | null) {
+    if (unitId !== null) {
+      const unit = units.value?.find((u) => u.id === unitId);
+      if (unit) {
+        bridge?.postMessage({ type: "set-unit-debug", unitId, debug: !unit.debug });
+      }
+    } else {
+      const newDebug = !units.value?.some((u) => u.debug);
+      for (const u of units.value ?? []) {
+        bridge?.postMessage({ type: "set-unit-debug", unitId: u.id, debug: newDebug });
+      }
     }
   }
 
