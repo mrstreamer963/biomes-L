@@ -48,14 +48,6 @@ onMounted(async () => {
     }
   }
 
-  // Also handle click directly on canvas for reliability
-  canvas.addEventListener('click', (e: MouseEvent) => {
-    const rect = canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-    handleClick(sx, sy);
-  });
-
   watch(
     () => biomeIds.value,
     (data) => {

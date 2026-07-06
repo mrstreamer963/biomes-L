@@ -53,8 +53,8 @@ pub fn movement_system(
         }
 
         // Determine biome under the unit
-        let col = (pos.x / TILE_SIZE).round() as u32;
-        let row = (pos.y / TILE_SIZE).round() as u32;
+        let col = (pos.x / TILE_SIZE).floor() as u32;
+        let row = (pos.y / TILE_SIZE).floor() as u32;
         let idx = (row as usize) * (grid.width as usize) + (col as usize);
         let biome_id = grid.biome_ids.get(idx).copied().unwrap_or(0);
         let speed_factor = defs.definitions.get(biome_id as usize)
@@ -75,8 +75,8 @@ pub fn movement_system(
         let ny = pos.y + (dy / dist) * step;
 
         // Check new biome for passability
-        let ncol = (nx / TILE_SIZE).round() as u32;
-        let nrow = (ny / TILE_SIZE).round() as u32;
+        let ncol = (nx / TILE_SIZE).floor() as u32;
+        let nrow = (ny / TILE_SIZE).floor() as u32;
         let nidx = (nrow as usize) * (grid.width as usize) + (ncol as usize);
         let nbiome = grid.biome_ids.get(nidx).copied().unwrap_or(0);
         let npassable = defs.definitions.get(nbiome as usize)

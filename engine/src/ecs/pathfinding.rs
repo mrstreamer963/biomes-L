@@ -148,8 +148,8 @@ pub fn find_path(
 
 /// Converts pixel coordinates to tile coordinates.
 pub fn pixel_to_tile(x: f64, y: f64) -> (u32, u32) {
-    let col = (x / TILE_SIZE).round() as u32;
-    let row = (y / TILE_SIZE).round() as u32;
+    let col = (x / TILE_SIZE).floor().max(0.0) as u32;
+    let row = (y / TILE_SIZE).floor().max(0.0) as u32;
     (col, row)
 }
 

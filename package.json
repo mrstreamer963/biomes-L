@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "for port in 4173 4174 4175 4176 4177 4178 4179; do lsof -ti:$port | xargs kill -9 2>/dev/null; done && bash scripts/build-wasm.sh --dev && vite",
+    "dev": "for port in 5173 5174 5175; do lsof -ti:$port | xargs kill -9 2>/dev/null; done && bash scripts/build-wasm.sh --dev && vite",
     "build": "vue-tsc && vite build",
     "preview": "vite preview"
   },
