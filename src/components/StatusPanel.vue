@@ -2,15 +2,9 @@
 import { computed } from "vue";
 import { useGridSnapshot } from "../composables/useGridSnapshot";
 
-const { width, height, biomeDefinitions, biomeCounts, status, error, units, selectedUnitId, toggleDebug } = useGridSnapshot();
+const { width, height, biomeDefinitions, biomeCounts, status, error, units, toggleDebug } = useGridSnapshot();
 
-const selectedDebug = computed(() => {
-  if (selectedUnitId.value !== null) {
-    const unit = units.value?.find((u) => u.id === selectedUnitId.value);
-    return unit?.debug ?? false;
-  }
-  return units.value?.some((u) => u.debug) ?? false;
-});
+const debugOn = computed(() => units.value?.some((u) => u.debug) ?? false);
 
 const rows = computed(() =>
   biomeDefinitions.value.map((def, id) => ({
@@ -50,7 +44,7 @@ const colorToHex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
     <div class="field">
       <label>Debug</label>
       <label class="debug-toggle">
-        <input type="checkbox" :checked="selectedDebug" @change="toggleDebug(selectedUnitId)" />
+        <input type="checkbox" :checked="debugOn" @change="toggleDebug()" />
         Show waypoints and target
       </label>
     </div>
