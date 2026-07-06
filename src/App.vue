@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import StatusPanel from "./components/StatusPanel.vue";
 import GameCanvas from "./components/GameCanvas.vue";
+import { createGridSnapshot } from "./composables/useGridSnapshot";
+
+createGridSnapshot();
 </script>
 
 <template>

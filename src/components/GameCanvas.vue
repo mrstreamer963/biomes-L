@@ -32,29 +32,8 @@ onMounted(async () => {
   let camera: MapCamera | null = null;
   let unitManager: UnitManager | null = null;
 
-  // Drag detection state (to distinguish click from pan)
-  let pointerDownPos = { x: 0, y: 0 };
-  let isDragging = false;
-
-  canvas.addEventListener("pointerdown", (e: PointerEvent) => {
-    pointerDownPos = { x: e.clientX, y: e.clientY };
-    isDragging = false;
-  });
-
-  canvas.addEventListener("pointermove", (e: PointerEvent) => {
-    const dx = e.clientX - pointerDownPos.x;
-    const dy = e.clientY - pointerDownPos.y;
-    if (Math.sqrt(dx * dx + dy * dy) > 5) {
-      isDragging = true;
-    }
-  });
-
-  canvas.addEventListener("pointerup", (e: PointerEvent) => {
-    if (isDragging || !unitManager) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
+  function handleClick(screenX: number, screenY: number) {
+    if (!unitManager) return;
 
     const worldX = (screenX - worldContainer.position.x) / worldContainer.scale.x;
     const worldY = (screenY - worldContainer.position.y) / worldContainer.scale.y;
@@ -67,6 +46,14 @@ onMounted(async () => {
       sendMoveCommand(selectedUnitId.value, worldX, worldY);
       clearSelection();
     }
+  }
+
+  // Also handle click directly on canvas for reliability
+  canvas.addEventListener('click', (e: MouseEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    handleClick(sx, sy);
   });
 
   watch(
@@ -83,6 +70,7 @@ onMounted(async () => {
 
       camera?.destroy();
       camera = new MapCamera(worldContainer, canvas);
+      camera.onClick(handleClick);
     }
   );
 

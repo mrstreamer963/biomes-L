@@ -11,7 +11,8 @@ export type WorkerMessage =
 export type MainMessage =
   | { type: "init"; biomeDefinitions: BiomeDefinition[]; generationParams: GenerationParams }
   | { type: "tick"; dt: number }
-  | { type: "set-unit-target"; unitId: number; x: number; y: number };
+  | { type: "set-unit-target"; unitId: number; x: number; y: number }
+  | { type: "set-unit-debug"; unitId: number; debug: boolean };
 
 export interface WasmBridge {
   postMessage(msg: MainMessage): void;

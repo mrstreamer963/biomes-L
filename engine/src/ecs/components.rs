@@ -42,5 +42,8 @@ pub enum UnitKind {
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Selected(pub bool);
 
+#[derive(Component, Debug, Clone, Copy)]
+pub struct DebugFlag(pub bool);
+
 #[derive(Component, Debug, Clone)]
 pub struct Path(pub Vec<(f64, f64)>);

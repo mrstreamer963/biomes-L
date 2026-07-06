@@ -201,6 +201,7 @@ pub fn create_unit(handle: u32, x: f64, y: f64, unit_type: &str) -> u32 {
             Team(0),
             unit_kind,
             Selected(false),
+            DebugFlag(false),
         )).id();
 
         store.unit_map.insert(unit_id, entity);
@@ -272,6 +273,22 @@ pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
 }
 
 #[wasm_bindgen]
+pub fn set_unit_debug(handle: u32, unit_id: u32, debug: bool) {
+    STORE.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(store) = s.get_mut(&handle) else {
+            return;
+        };
+
+        if let Some(&entity) = store.unit_map.get(&unit_id) {
+            if let Some(mut flag) = store.world.get_mut::<DebugFlag>(entity) {
+                flag.0 = debug;
+            }
+        }
+    })
+}
+
+#[wasm_bindgen]
 pub fn set_unit_selected(handle: u32, unit_id: u32, selected: bool) {
     STORE.with(|s| {
         let mut s = s.borrow_mut();
@@ -297,6 +314,9 @@ struct UnitSnapshot {
     unit_type: String,
     team: u8,
     selected: bool,
+    debug: bool,
+    path: Vec<(f64, f64)>,
+    target: Option<(f64, f64)>,
 }
 
 #[wasm_bindgen]
@@ -321,6 +341,9 @@ pub fn tick(handle: u32, dt: f64) -> JsValue {
             let kind = store.world.get::<UnitKind>(entity).unwrap();
             let team = store.world.get::<Team>(entity).unwrap();
             let selected = store.world.get::<Selected>(entity).unwrap();
+            let debug = store.world.get::<DebugFlag>(entity).unwrap();
+            let path = store.world.get::<Path>(entity).unwrap();
+            let target = store.world.get::<MovementTarget>(entity).unwrap();
 
             snapshots.push(UnitSnapshot {
                 id,
@@ -334,6 +357,9 @@ pub fn tick(handle: u32, dt: f64) -> JsValue {
                 },
                 team: team.0,
                 selected: selected.0,
+                debug: debug.0,
+                path: path.0.clone(),
+                target: target.0,
             });
         }
 
@@ -398,6 +424,7 @@ pub fn spawn_starting_units(handle: u32) {
             Team(0),
             UnitKind::Scout,
             Selected(false),
+            DebugFlag(false),
         )).id();
         let e2 = store.world.spawn((
             Position { x: spawn_x + 20.0, y: spawn_y },
@@ -409,6 +436,7 @@ pub fn spawn_starting_units(handle: u32) {
             Team(0),
             UnitKind::Scout,
             Selected(false),
+            DebugFlag(false),
         )).id();
         let e3 = store.world.spawn((
             Position { x: spawn_x, y: spawn_y - 25.0 },
@@ -420,6 +448,7 @@ pub fn spawn_starting_units(handle: u32) {
             Team(0),
             UnitKind::Soldier,
             Selected(false),
+            DebugFlag(false),
         )).id();
 
         store.unit_map.insert(unit_id_1, e1);

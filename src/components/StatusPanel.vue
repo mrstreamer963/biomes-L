@@ -2,7 +2,13 @@
 import { computed } from "vue";
 import { useGridSnapshot } from "../composables/useGridSnapshot";
 
-const { width, height, biomeDefinitions, biomeCounts, status, error } = useGridSnapshot();
+const { width, height, biomeDefinitions, biomeCounts, status, error, units, selectedUnitId, toggleDebug } = useGridSnapshot();
+
+const selectedDebug = computed(() => {
+  if (selectedUnitId.value === null) return false;
+  const unit = units.value?.find((u) => u.id === selectedUnitId.value);
+  return unit?.debug ?? false;
+});
 
 const rows = computed(() =>
   biomeDefinitions.value.map((def, id) => ({
@@ -37,6 +43,15 @@ const colorToHex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
           <span class="biome-count">{{ row.count }}</span>
         </li>
       </ul>
+    </div>
+
+    <div class="field">
+      <label>Debug</label>
+      <label class="debug-toggle">
+        <input type="checkbox" :checked="selectedDebug" :disabled="selectedUnitId === null" @change="selectedUnitId !== null && toggleDebug(selectedUnitId)" />
+        Show waypoints and target
+      </label>
+      <div v-if="selectedUnitId === null" class="hint">Select a unit first</div>
     </div>
 
     <div class="worker-status">
@@ -151,5 +166,20 @@ label {
   background: #f8d7da;
   color: #721c24;
   border: 1px solid #f5c6cb;
+}
+
+.debug-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: sans-serif;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.debug-toggle input {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
 }
 </style>

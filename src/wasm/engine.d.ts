@@ -29,6 +29,9 @@ export interface UnitData {
   unit_type: string;
   team: number;
   selected: boolean;
+  debug: boolean;
+  path: [number, number][];
+  target: [number, number] | null;
 }
 
 export interface GenerationParams {
@@ -52,6 +55,7 @@ export function create_grid(params: any, width: number, height: number): number;
 export function create_unit(handle: number, x: number, y: number, unit_type: string): number;
 export function grid_snapshot(handle: number): any;
 export function register_biome_definitions(handle: number, definitions: any): boolean;
+export function set_unit_debug(handle: number, unit_id: number, debug: boolean): void;
 export function set_unit_selected(handle: number, unit_id: number, selected: boolean): void;
 export function set_unit_target(handle: number, unit_id: number, x: number, y: number): void;
 export function spawn_starting_units(handle: number): void;

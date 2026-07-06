@@ -65,6 +65,15 @@ export function register_biome_definitions(handle, definitions) {
 /**
  * @param {number} handle
  * @param {number} unit_id
+ * @param {boolean} debug
+ */
+export function set_unit_debug(handle, unit_id, debug) {
+    wasm.set_unit_debug(handle, unit_id, debug);
+}
+
+/**
+ * @param {number} handle
+ * @param {number} unit_id
  * @param {boolean} selected
  */
 export function set_unit_selected(handle, unit_id, selected) {

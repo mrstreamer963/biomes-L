@@ -1,11 +1,31 @@
-import { ref, computed, shallowRef, onMounted, onUnmounted } from "vue";
+import { ref, computed, shallowRef, onMounted, onUnmounted, type ComputedRef, type Ref, type ShallowRef } from "vue";
 import { createWasmBridge, type WorkerStatus } from "../bridge/wasm";
 import type { UnitData } from "../wasm/engine";
 import { DEFAULT_BIOME_DEFINITIONS, DEFAULT_GENERATION_PARAMS, type BiomeDefinition } from "../config/biomeConfig";
 
 export type BiomeCounts = Record<number, number>;
 
-export function useGridSnapshot() {
+export interface GridSnapshotState {
+  width: Ref<number>;
+  height: Ref<number>;
+  biomeIds: Ref<Uint16Array | null>;
+  biomeDefinitions: Ref<BiomeDefinition[]>;
+  status: Ref<WorkerStatus>;
+  error: Ref<string | null>;
+  units: ShallowRef<UnitData[]>;
+  selectedUnitId: Ref<number | null>;
+  biomeCounts: ComputedRef<BiomeCounts>;
+  selectUnit: (unitId: number) => void;
+  clearSelection: () => void;
+  sendMoveCommand: (unitId: number, x: number, y: number) => void;
+  toggleDebug: (unitId: number) => void;
+}
+
+let instance: GridSnapshotState | null = null;
+
+export function createGridSnapshot(): GridSnapshotState {
+  if (instance) return instance;
+
   const width = ref<number>(0);
   const height = ref<number>(0);
   const biomeIds = ref<Uint16Array | null>(null);
@@ -16,7 +36,6 @@ export function useGridSnapshot() {
   const selectedUnitId = ref<number | null>(null);
 
   let bridge: ReturnType<typeof createWasmBridge> | null = null;
-  let cleanup: (() => void) | null = null;
   let rafId: number | null = null;
   let lastTime: number | null = null;
 
@@ -38,7 +57,7 @@ export function useGridSnapshot() {
       if (!bridge) return;
 
       if (lastTime !== null) {
-        const dt = Math.min((time - lastTime) / 1000, 0.05); // cap at 50ms
+        const dt = Math.min((time - lastTime) / 1000, 0.05);
         bridge.postMessage({ type: "tick", dt });
       }
 
@@ -69,10 +88,17 @@ export function useGridSnapshot() {
     bridge?.postMessage({ type: "set-unit-target", unitId, x, y });
   }
 
+  function toggleDebug(unitId: number) {
+    const unit = units.value?.find((u) => u.id === unitId);
+    if (unit) {
+      bridge?.postMessage({ type: "set-unit-debug", unitId, debug: !unit.debug });
+    }
+  }
+
   onMounted(() => {
     bridge = createWasmBridge();
 
-    cleanup = bridge.onMessage((msg) => {
+    const cleanup = bridge.onMessage((msg) => {
       if (msg.type === "grid-snapshot") {
         width.value = msg.width;
         height.value = msg.height;
@@ -95,17 +121,26 @@ export function useGridSnapshot() {
       biomeDefinitions: DEFAULT_BIOME_DEFINITIONS,
       generationParams: DEFAULT_GENERATION_PARAMS,
     });
+
+    onUnmounted(() => {
+      stopGameLoop();
+      cleanup();
+      bridge?.terminate();
+    });
   });
 
-  onUnmounted(() => {
-    stopGameLoop();
-    cleanup?.();
-    bridge?.terminate();
-  });
-
-  return {
+  instance = {
     width, height, biomeIds, biomeDefinitions, biomeCounts, status, error,
     units, selectedUnitId,
-    selectUnit, clearSelection, sendMoveCommand,
+    selectUnit, clearSelection, sendMoveCommand, toggleDebug,
   };
+  (window as any).__snapshot = instance;
+  return instance;
+}
+
+export function useGridSnapshot(): GridSnapshotState {
+  if (!instance) {
+    throw new Error("useGridSnapshot() must be called after createGridSnapshot() from App.vue");
+  }
+  return instance;
 }

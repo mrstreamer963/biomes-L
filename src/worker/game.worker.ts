@@ -1,4 +1,4 @@
-import init, { create_grid, grid_snapshot, register_biome_definitions, spawn_starting_units, tick, set_unit_target } from "../wasm/engine";
+import init, { create_grid, grid_snapshot, register_biome_definitions, spawn_starting_units, tick, set_unit_target, set_unit_debug } from "../wasm/engine";
 import type { BiomeDefinition, GenerationParams } from "../config/biomeConfig";
 import { DEFAULT_GENERATION_PARAMS } from "../config/biomeConfig";
 
@@ -56,6 +56,9 @@ self.onmessage = async (e: MessageEvent) => {
   } else if (e.data.type === "set-unit-target") {
     if (handle === 0) return;
     set_unit_target(handle, e.data.unitId, e.data.x, e.data.y);
+  } else if (e.data.type === "set-unit-debug") {
+    if (handle === 0) return;
+    set_unit_debug(handle, e.data.unitId, e.data.debug);
   }
 };
 
