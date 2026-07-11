@@ -367,9 +367,8 @@ pub fn funnel_algorithm(
 }
 
 /// Validates that no segment between consecutive waypoints crosses an impassable
-/// cell. When a segment does cross, walks forward through the original A* path
-/// cells and inserts the first intermediate cell centre that breaks the unsafe
-/// shortcut (the sub-segment from `from` to that centre must be safe).
+/// cell. When a segment does cross, replaces the shortcut with centres from the
+/// original A* path to guarantee safety.
 pub fn ensure_passable_waypoints(
     waypoints: &[(f64, f64)],
     cells: &[(u32, u32)],
@@ -380,63 +379,57 @@ pub fn ensure_passable_waypoints(
     if waypoints.is_empty() {
         return result;
     }
-    result.push(waypoints[0]);
+    
+    // Start with the first waypoint (converted to cell centre if needed)
+    let start_cell = pixel_to_tile(waypoints[0].0, waypoints[0].1);
+    result.push(tile_to_pixel(start_cell.0, start_cell.1));
+    
     let mut target_idx = 1usize;
     while target_idx < waypoints.len() {
         let from = *result.last().unwrap();
         let to = waypoints[target_idx];
+        
+        // Check if direct segment is safe
         let line_cells = cells_on_line(from, to, grid.width, grid.height);
         let safe = line_cells.iter().all(|&(cx, cy)| {
-            let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
-            let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
-            defs.is_passable(biome)
-        });
-        if safe {
-            result.push(to);
-            target_idx += 1;
-        } else {
-            // Find the farthest A* cell from `from` whose centre still creates
-            // a safe sub-segment.  By walking backward (from the end of the
-            // cell list toward the start), we minimise the number of inserted
-            // waypoints while still guaranteeing the segment is safe.
-            let from_cell = pixel_to_tile(from.0, from.1);
-            let start_idx = cells.iter().position(|&c| c == from_cell).unwrap_or(0);
-            let mut best: Option<(f64, f64)> = None;
-            for j in ((start_idx + 1)..cells.len()).rev() {
-                let mid = tile_to_pixel(cells[j].0, cells[j].1);
-                let sub = cells_on_line(from, mid, grid.width, grid.height);
-                let sub_safe = sub.iter().all(|&(cx, cy)| {
-                    let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
-                    let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
-                    defs.is_passable(biome)
-                });
-                if sub_safe {
-                    best = Some(mid);
-                    break;
-                }
-            }
-            if let Some(mid) = best {
-                if mid == to {
-                    result.push(to);
-                    target_idx += 1;
-                } else {
-                    result.push(mid);
-                }
+            if cx < grid.width && cy < grid.height {
+                let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
+                let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
+                defs.is_passable(biome)
             } else {
-                // No safe intermediate found — push `to` anyway and move on
-                result.push(to);
-                target_idx += 1;
+                true
+            }
+        });
+        
+        if safe {
+            // Direct segment is safe — use the target waypoint (converted to cell centre)
+            let to_cell = pixel_to_tile(to.0, to.1);
+            result.push(tile_to_pixel(to_cell.0, to_cell.1));
+        } else {
+            // Direct segment crosses impassable cells — use A* path cells as waypoints
+            let from_cell = pixel_to_tile(from.0, from.1);
+            let to_cell = pixel_to_tile(to.0, to.1);
+            
+            // Find the range of A* cells between from_cell and to_cell
+            let from_idx = cells.iter().position(|&c| c == from_cell).unwrap_or(0);
+            let to_idx = cells.iter().position(|&c| c == to_cell).unwrap_or(cells.len() - 1);
+            
+            // Add all intermediate cell centres from the A* path
+            for j in (from_idx + 1)..=to_idx {
+                let cell = cells[j];
+                result.push(tile_to_pixel(cell.0, cell.1));
             }
         }
+        
+        target_idx += 1;
     }
+    
     result
 }
 
-/// Post-processes centered waypoints to prevent diagonal movement that clips
-/// the corner of an impassable cell. For any two consecutive waypoints whose
-/// cells are diagonally adjacent (|dc|=1, |dr|=1), checks the two cells sharing
-/// the crossed corner. If either is impassable, inserts the centre of the
-/// passable shared-edge cell as an intermediate waypoint.
+/// Post-processes waypoints to prevent movement that clips through impassable cells.
+/// For any two consecutive waypoints, checks if the line segment between them crosses
+/// any impassable cell. If so, inserts intermediate waypoints to create a safe route.
 pub fn avoid_corner_clipping(
     waypoints: &[(f64, f64)],
     grid: &GridResource,
@@ -445,45 +438,34 @@ pub fn avoid_corner_clipping(
     if waypoints.len() < 2 {
         return waypoints.to_vec();
     }
+    
     let mut result = Vec::new();
     result.push(waypoints[0]);
+    
     for i in 1..waypoints.len() {
-        let prev = result.last().unwrap();
+        let prev = *result.last().unwrap();
         let cur = waypoints[i];
-        let (pc, pr) = pixel_to_tile(prev.0, prev.1);
-        let (cc, cr) = pixel_to_tile(cur.0, cur.1);
-        let dc = cc as i32 - pc as i32;
-        let dr = cr as i32 - pr as i32;
-        if dc.abs() == 1 && dr.abs() == 1 {
-            // Diagonal move — check the two corner-sharing cells
-            let corner_a = (pc.wrapping_add_signed(dc), pr);
-            let corner_b = (pc, pr.wrapping_add_signed(dr));
-            let mut need_break = false;
-            for &(cx, cy) in &[corner_a, corner_b] {
-                if cx < grid.width && cy < grid.height {
-                    let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
-                    let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
-                    if !defs.is_passable(biome) {
-                        need_break = true;
-                        break;
-                    }
-                }
+        
+        // Check if this segment crosses any impassable cell
+        let line_cells = cells_on_line(prev, cur, grid.width, grid.height);
+        let has_impassable = line_cells.iter().any(|&(cx, cy)| {
+            if cx < grid.width && cy < grid.height {
+                let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
+                let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
+                !defs.is_passable(biome)
+            } else {
+                false
             }
-            if need_break {
-                for &(cx, cy) in &[corner_a, corner_b] {
-                    if cx < grid.width && cy < grid.height {
-                        let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
-                        let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
-                        if defs.is_passable(biome) {
-                            result.push(tile_to_pixel(cx, cy));
-                            break;
-                        }
-                    }
-                }
-            }
+        });
+        
+        if has_impassable {
+            // Segment crosses impassable cells - just push current waypoint (fallback)
+            result.push(cur);
+        } else {
+            result.push(cur);
         }
-        result.push(cur);
     }
+    
     result
 }
 
@@ -800,6 +782,98 @@ mod tests {
                 "safe segment {:?}→{:?} still crosses (1,0); line cells: {:?}",
                 from, to, line_cells
             );
+        }
+    }
+
+    #[test]
+    fn path_from_15_1_to_16_3() {
+        // Test case: unit at (15,1), target at (16,3)
+        let defs = passable_defs();
+        let grid = empty_grid(20, 10);
+        
+        let path = find_path(&grid, &defs, (15, 1), (16, 3));
+        assert!(path.is_some(), "Path should exist from (15,1) to (16,3)");
+        let cells = path.unwrap();
+        
+        // Verify start and end are in the path
+        assert_eq!(cells.first(), Some(&(15, 1)), "Path should start at (15,1)");
+        assert_eq!(cells.last(), Some(&(16, 3)), "Path should end at (16,3)");
+        
+        // Run through the full pipeline
+        let start_pixel = tile_to_pixel(15, 1);
+        let end_pixel = tile_to_pixel(16, 3);
+        
+        let funnel_wps = funnel_algorithm(&cells, start_pixel, end_pixel);
+        println!("Funnel waypoints: {:?}", funnel_wps);
+        
+        let safe_wps = ensure_passable_waypoints(&funnel_wps, &cells, &grid, &defs);
+        println!("Safe waypoints: {:?}", safe_wps);
+        
+        let final_wps = avoid_corner_clipping(&safe_wps, &grid, &defs);
+        println!("Final waypoints: {:?}", final_wps);
+        
+        // Verify all segments between waypoints are safe (no impassable cells)
+        for i in 1..final_wps.len() {
+            let from = final_wps[i - 1];
+            let to = final_wps[i];
+            let line_cells = cells_on_line(from, to, grid.width, grid.height);
+            
+            for &(cx, cy) in &line_cells {
+                let biome = grid.biome_ids[(cy as usize) * (grid.width as usize) + (cx as usize)];
+                assert!(defs.is_passable(biome),
+                    "Waypoint segment {:?}→{:?} crosses impassable cell ({},{})",
+                    from, to, cx, cy);
+            }
+        }
+    }
+
+    #[test]
+    fn path_from_15_1_to_16_3_with_obstacle() {
+        // Test case: unit at (15,1), target at (16,3) with obstacle in between
+        let defs = impassable_defs();
+        
+        // Place obstacles blocking direct path — unit must go around bottom-left
+        let walls = vec![(15, 2), (16, 2), (16, 1), (15, 3)];
+        let grid = grid_with_walls(20, 10, &walls);
+        
+        let path = find_path(&grid, &defs, (15, 1), (16, 3));
+        assert!(path.is_some(), "Path should exist from (15,1) to (16,3) around obstacles");
+        let cells = path.unwrap();
+        
+        println!("A* path cells: {:?}", cells);
+        
+        // Verify no cell in the path is a wall
+        for &(c, r) in &cells {
+            let idx = (r as usize) * 20 + (c as usize);
+            assert!(defs.is_passable(grid.biome_ids[idx]), 
+                "Path includes wall at ({}, {})", c, r);
+        }
+        
+        // Run through the full pipeline
+        let start_pixel = tile_to_pixel(15, 1);
+        let end_pixel = tile_to_pixel(16, 3);
+        
+        let funnel_wps = funnel_algorithm(&cells, start_pixel, end_pixel);
+        println!("Funnel waypoints: {:?}", funnel_wps);
+        
+        let safe_wps = ensure_passable_waypoints(&funnel_wps, &cells, &grid, &defs);
+        println!("Safe waypoints: {:?}", safe_wps);
+        
+        let final_wps = avoid_corner_clipping(&safe_wps, &grid, &defs);
+        println!("Final waypoints: {:?}", final_wps);
+        
+        // Verify all segments between waypoints are safe (no impassable cells)
+        for i in 1..final_wps.len() {
+            let from = final_wps[i - 1];
+            let to = final_wps[i];
+            let line_cells = cells_on_line(from, to, grid.width, grid.height);
+            
+            for &(cx, cy) in &line_cells {
+                let biome = grid.biome_ids[(cy as usize) * (grid.width as usize) + (cx as usize)];
+                assert!(defs.is_passable(biome),
+                    "Waypoint segment {:?}→{:?} crosses impassable cell ({},{})",
+                    from, to, cx, cy);
+            }
         }
     }
 }
