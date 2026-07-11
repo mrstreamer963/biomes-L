@@ -9,7 +9,7 @@ use wasm_bindgen::JsValue;
 
 use crate::ecs::*;
 use crate::ecs::systems::movement_system;
-use crate::ecs::pathfinding::{find_path, pixel_to_tile, tile_to_pixel};
+use crate::ecs::pathfinding::{ensure_passable_waypoints, find_path, funnel_algorithm, pixel_to_tile, tile_to_pixel};
 use crate::noise;
 
 static NEXT_HANDLE: AtomicU32 = AtomicU32::new(1);
@@ -45,6 +45,7 @@ thread_local! {
 }
 
 const BIOME_NONE: u8 = 255;
+
 
 #[wasm_bindgen]
 pub fn create_grid(params: JsValue, width: u32, height: u32) -> u32 {
@@ -225,39 +226,46 @@ pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
             };
 
             // Convert to tile coordinates
-            let start = pixel_to_tile(pos.x, pos.y);
-            let end = pixel_to_tile(x, y);
+            let start_tile = pixel_to_tile(pos.x, pos.y);
+            let end_tile = pixel_to_tile(x, y);
+
+            // Snap movement target to tile center
+            let tile_center = tile_to_pixel(end_tile.0, end_tile.1);
 
             // Get grid and definitions for pathfinding
             let grid = store.world.get_resource::<GridResource>().unwrap();
             let defs = store.world.get_resource::<BiomeDefinitions>().unwrap();
 
             // Find path
-            let path_cells = find_path(&grid, &defs, start, end);
+            let path_cells = find_path(&grid, &defs, start_tile, end_tile);
 
             if let Some(cells) = path_cells {
-                // Convert path cells to pixel waypoints
-                let waypoints: Vec<(f64, f64)> = if cells.len() <= 1 {
-                    // Direct path — just use the target
-                    vec![(x, y)]
+                let funnel_waypoints = funnel_algorithm(&cells, (pos.x, pos.y), tile_center);
+
+                // Ensure no line segment crosses impassable cells
+                let safe_waypoints = ensure_passable_waypoints(&funnel_waypoints, &cells, &grid, &defs);
+
+                // Snap all waypoints to tile centers so units move cell-to-cell
+                let centered_waypoints: Vec<(f64, f64)> = safe_waypoints.iter().map(|&(wx, wy)| {
+                    let (tx, ty) = pixel_to_tile(wx, wy);
+                    tile_to_pixel(tx, ty)
+                }).collect();
+
+                // Path contains waypoints excluding start position
+                let path_waypoints: Vec<(f64, f64)> = if centered_waypoints.len() > 1 {
+                    centered_waypoints[1..].to_vec()
                 } else {
-                    cells
-                        .iter()
-                        .skip(1) // Skip the starting cell
-                        .map(|&(c, r)| tile_to_pixel(c, r))
-                        .collect()
+                    centered_waypoints
                 };
 
-                // Set the last waypoint as the movement target
-                if let Some(&last) = waypoints.last() {
-                    if let Some(mut target) = store.world.get_mut::<MovementTarget>(entity) {
-                        target.0 = Some(last);
-                    }
+                // Movement target is the center of the clicked tile
+                if let Some(mut target) = store.world.get_mut::<MovementTarget>(entity) {
+                    target.0 = Some(tile_center);
                 }
 
-                // Set the path
+                // Set the path (waypoints at tile centers)
                 if let Some(mut path) = store.world.get_mut::<Path>(entity) {
-                    path.0 = waypoints;
+                    path.0 = path_waypoints;
                 }
             } else {
                 // No path found — clear target and path

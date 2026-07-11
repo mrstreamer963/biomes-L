@@ -12,10 +12,10 @@ pub fn movement_system(
     time: Res<GameTime>,
     grid: Res<GridResource>,
     defs: Res<BiomeDefinitions>,
-    mut query: Query<(&mut Position, &MovementTarget, &BaseSpeed, &mut MovementStatus, &mut Path), With<MovementTarget>>,
+    mut query: Query<(&mut Position, &mut MovementTarget, &BaseSpeed, &mut MovementStatus, &mut Path), With<MovementTarget>>,
 ) {
     let dt = time.delta;
-    for (mut pos, target, speed, mut status, mut path) in query.iter_mut() {
+    for (mut pos, mut target, speed, mut status, mut path) in query.iter_mut() {
         let (tx, ty) = match target.0 {
             Some(t) => t,
             None => {
@@ -62,7 +62,8 @@ pub fn movement_system(
             .unwrap_or(1.0);
 
         if speed_factor == 0.0 {
-            // Impassable biome — stop (shouldn't happen with valid path, but safety check)
+            path.0.clear();
+            target.0 = None;
             status.idling = true;
             continue;
         }
@@ -84,6 +85,9 @@ pub fn movement_system(
             .unwrap_or(false);
 
         if !npassable {
+            // Clear movement state to prevent permanent stalling
+            path.0.clear();
+            target.0 = None;
             status.idling = true;
             continue;
         }

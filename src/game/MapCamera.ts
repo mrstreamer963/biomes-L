@@ -33,7 +33,7 @@ export class MapCamera {
     this.canvas.addEventListener("pointerdown", this.handlePointerDown);
     this.canvas.addEventListener("pointermove", this.handlePointerMove);
     this.canvas.addEventListener("pointerup", this.handlePointerUp);
-    this.canvas.addEventListener("pointerleave", this.handlePointerUp);
+    this.canvas.addEventListener("pointerleave", this.handlePointerLeave);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
   }
 
@@ -41,7 +41,7 @@ export class MapCamera {
     this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
     this.canvas.removeEventListener("pointermove", this.handlePointerMove);
     this.canvas.removeEventListener("pointerup", this.handlePointerUp);
-    this.canvas.removeEventListener("pointerleave", this.handlePointerUp);
+    this.canvas.removeEventListener("pointerleave", this.handlePointerLeave);
     this.canvas.removeEventListener("wheel", this.onWheel);
     this.onClickCb = null;
   }
@@ -90,6 +90,13 @@ export class MapCamera {
       const sy = e.clientY - rect.top;
       this.onClickCb?.(sx, sy);
     }
+    this.canvas.style.cursor = "grab";
+  };
+
+  private handlePointerLeave = () => {
+    this.isPanning = false;
+    this.pointerDown = null;
+    this.wasDrag = false;
     this.canvas.style.cursor = "grab";
   };
 

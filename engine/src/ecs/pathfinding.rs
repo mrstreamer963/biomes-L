@@ -195,6 +195,31 @@ pub fn find_path(
     None
 }
 
+/// Returns all tile indices touched by the line segment from `from` to `to`.
+/// Uses pixel-level sampling so no crossed cell is missed.
+pub fn cells_on_line(from: (f64, f64), to: (f64, f64), width: u32, height: u32) -> Vec<(u32, u32)> {
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let dist = dx.hypot(dy);
+    let steps = dist.ceil().max(1.0) as u32;
+
+    let mut cells = Vec::new();
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let x = from.0 + dx * t;
+        let y = from.1 + dy * t;
+        let col = (x / TILE_SIZE).floor() as i32;
+        let row = (y / TILE_SIZE).floor() as i32;
+        if col >= 0 && row >= 0 && (col as u32) < width && (row as u32) < height {
+            let cell = (col as u32, row as u32);
+            if cells.last() != Some(&cell) {
+                cells.push(cell);
+            }
+        }
+    }
+    cells
+}
+
 /// Converts pixel coordinates to tile coordinates.
 pub fn pixel_to_tile(x: f64, y: f64) -> (u32, u32) {
     let col = (x / TILE_SIZE).floor().max(0.0) as u32;
@@ -205,6 +230,183 @@ pub fn pixel_to_tile(x: f64, y: f64) -> (u32, u32) {
 /// Converts tile coordinates to pixel center coordinates.
 pub fn tile_to_pixel(col: u32, row: u32) -> (f64, f64) {
     (col as f64 * TILE_SIZE + 16.0, row as f64 * TILE_SIZE + 16.0)
+}
+
+fn cross(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
+    (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+}
+
+/// Returns the portal vertices (left, right) for the edge between cell (c1, r1)
+/// and its neighbor in direction (dc, dr).
+pub fn portal_vertices(
+    c1: u32,
+    r1: u32,
+    dc: i32,
+    dr: i32,
+) -> ((f64, f64), (f64, f64)) {
+    let t = TILE_SIZE;
+    let col = c1 as f64;
+    let row = r1 as f64;
+    match (dc, dr) {
+        (1, 0) => (
+            ((col + 1.0) * t, row * t),
+            ((col + 1.0) * t, (row + 1.0) * t),
+        ),
+        (-1, 0) => (
+            (col * t, (row + 1.0) * t),
+            (col * t, row * t),
+        ),
+        (0, 1) => (
+            ((col + 1.0) * t, (row + 1.0) * t),
+            (col * t, (row + 1.0) * t),
+        ),
+        (0, -1) => (
+            (col * t, row * t),
+            ((col + 1.0) * t, row * t),
+        ),
+        (1, 1) => (
+            ((col + 1.0) * t, (row + 1.0) * t),
+            ((col + 1.0) * t, (row + 1.0) * t),
+        ),
+        (1, -1) => (
+            ((col + 1.0) * t, row * t),
+            ((col + 1.0) * t, row * t),
+        ),
+        (-1, 1) => (
+            (col * t, (row + 1.0) * t),
+            (col * t, (row + 1.0) * t),
+        ),
+        (-1, -1) => (
+            (col * t, row * t),
+            (col * t, row * t),
+        ),
+        _ => unreachable!(),
+    }
+}
+
+/// Post-processes an A* path using the Simple Stupid Funnel Algorithm (SSFA).
+/// Returns waypoints at tile vertices (not centers) forming the shortest path
+/// through the corridor of cells.
+pub fn funnel_algorithm(
+    cells: &[(u32, u32)],
+    start: (f64, f64),
+    end: (f64, f64),
+) -> Vec<(f64, f64)> {
+    if cells.len() <= 1 {
+        return vec![end];
+    }
+    if cells.len() == 2 {
+        return vec![start, end];
+    }
+
+    let n = cells.len() - 1;
+    let mut portals = Vec::with_capacity(n + 2);
+    portals.push((start, start));
+
+    for i in 0..n {
+        let (c1, r1) = cells[i];
+        let (c2, r2) = cells[i + 1];
+        let dc = c2 as i32 - c1 as i32;
+        let dr = r2 as i32 - r1 as i32;
+        portals.push(portal_vertices(c1, r1, dc, dr));
+    }
+
+    portals.push((end, end));
+
+    let mut waypoints = vec![start];
+    let total = portals.len();
+
+    let mut apex = start;
+    let (mut left, mut right) = portals[1];
+
+    let mut i = 2usize;
+    while i < total {
+        let (portal_left, portal_right) = portals[i];
+
+        // Point portal (diagonal or end) — just set both sides, no cross check
+        if portal_left == portal_right {
+            if cross(apex, left, portal_left) >= 0.0 {
+                left = portal_left;
+            }
+            if cross(apex, right, portal_right) <= 0.0 {
+                right = portal_right;
+            }
+            i += 1;
+            continue;
+        }
+
+        // Tighten left
+        if cross(apex, left, portal_left) >= 0.0 {
+            if apex != left && cross(apex, right, portal_left) > 0.0 {
+                waypoints.push(right);
+                apex = right;
+                left = apex;
+                right = apex;
+                continue;
+            }
+            left = portal_left;
+        }
+
+        // Tighten right
+        if cross(apex, right, portal_right) <= 0.0 {
+            if apex != right && cross(apex, left, portal_right) < 0.0 {
+                waypoints.push(left);
+                apex = left;
+                left = apex;
+                right = apex;
+                continue;
+            }
+            right = portal_right;
+        }
+
+        i += 1;
+    }
+
+    waypoints.push(end);
+    waypoints
+}
+
+/// Validates that no segment between consecutive waypoints crosses an impassable
+/// cell. When a segment does cross, inserts the first A* path cell centre that
+/// lies on the segment as a safe intermediate waypoint.
+pub fn ensure_passable_waypoints(
+    waypoints: &[(f64, f64)],
+    cells: &[(u32, u32)],
+    grid: &GridResource,
+    defs: &BiomeDefinitions,
+) -> Vec<(f64, f64)> {
+    let mut result = Vec::new();
+    if waypoints.is_empty() {
+        return result;
+    }
+    result.push(waypoints[0]);
+    for i in 1..waypoints.len() {
+        let from = *result.last().unwrap();
+        let to = waypoints[i];
+        let line_cells = cells_on_line(from, to, grid.width, grid.height);
+        let mut safe = true;
+        for &(cx, cy) in &line_cells {
+            let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
+            let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
+            if !defs.is_passable(biome) {
+                safe = false;
+                break;
+            }
+        }
+        if safe {
+            result.push(to);
+        } else {
+            // Insert the first A* path cell centre found on the segment
+            for &(cx, cy) in &line_cells {
+                if cells.contains(&(cx, cy)) {
+                    result.push(tile_to_pixel(cx, cy));
+                    break;
+                }
+            }
+            result.push(to);
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -357,5 +559,169 @@ mod tests {
         let grid = empty_grid(5, 5);
         assert!(find_path(&grid, &defs, (10, 10), (0, 0)).is_none());
         assert!(find_path(&grid, &defs, (0, 0), (10, 10)).is_none());
+    }
+
+    // ─── portal_vertices tests ────────────────────────────────────────────────
+
+    #[test]
+    fn portal_right() {
+        let (l, r) = portal_vertices(1, 2, 1, 0);
+        assert_eq!(l, (64.0, 64.0));
+        assert_eq!(r, (64.0, 96.0));
+    }
+
+    #[test]
+    fn portal_left() {
+        let (l, r) = portal_vertices(1, 2, -1, 0);
+        assert_eq!(l, (32.0, 96.0));
+        assert_eq!(r, (32.0, 64.0));
+    }
+
+    #[test]
+    fn portal_down() {
+        let (l, r) = portal_vertices(1, 2, 0, 1);
+        assert_eq!(l, (64.0, 96.0));
+        assert_eq!(r, (32.0, 96.0));
+    }
+
+    #[test]
+    fn portal_up() {
+        let (l, r) = portal_vertices(1, 2, 0, -1);
+        assert_eq!(l, (32.0, 64.0));
+        assert_eq!(r, (64.0, 64.0));
+    }
+
+    #[test]
+    fn portal_diagonal_down_right() {
+        let (l, r) = portal_vertices(1, 2, 1, 1);
+        assert_eq!(l, (64.0, 96.0));
+        assert_eq!(r, (64.0, 96.0));
+    }
+
+    #[test]
+    fn portal_diagonal_up_right() {
+        let (l, r) = portal_vertices(1, 2, 1, -1);
+        assert_eq!(l, (64.0, 64.0));
+        assert_eq!(r, (64.0, 64.0));
+    }
+
+    #[test]
+    fn portal_diagonal_down_left() {
+        let (l, r) = portal_vertices(1, 2, -1, 1);
+        assert_eq!(l, (32.0, 96.0));
+        assert_eq!(r, (32.0, 96.0));
+    }
+
+    #[test]
+    fn portal_diagonal_up_left() {
+        let (l, r) = portal_vertices(1, 2, -1, -1);
+        assert_eq!(l, (32.0, 64.0));
+        assert_eq!(r, (32.0, 64.0));
+    }
+
+    // ─── funnel_algorithm tests ───────────────────────────────────────────────
+
+    fn close_enough(a: (f64, f64), b: (f64, f64)) -> bool {
+        (a.0 - b.0).abs() < 0.01 && (a.1 - b.1).abs() < 0.01
+    }
+
+    #[test]
+    fn funnel_straight_path_no_extra_waypoints() {
+        // Straight rightward path — no extra waypoints needed
+        let cells = [(0u32, 0u32), (1, 0), (2, 0), (3, 0)];
+        let path = funnel_algorithm(&cells, (16.0, 16.0), (100.0, 16.0));
+        assert_eq!(path.len(), 2, "should only have start and end: {:?}", path);
+        assert!(close_enough(path[0], (16.0, 16.0)));
+        assert!(close_enough(path[1], (100.0, 16.0)));
+    }
+
+    #[test]
+    fn funnel_l_shaped_path() {
+        // L-shaped path: right then down — SSFA finds direct line clear
+        let cells = [(0u32, 0u32), (1, 0), (1, 1)];
+        let path = funnel_algorithm(&cells, (16.0, 16.0), (48.0, 48.0));
+        assert_eq!(path.len(), 2, "direct line is clear, should be start+end: {:?}", path);
+        assert!(close_enough(path[0], (16.0, 16.0)));
+        assert!(close_enough(path[1], (48.0, 48.0)));
+    }
+
+    #[test]
+    fn funnel_s_shaped_path() {
+        // S-shaped: right, down, right — direct line is clear
+        let cells = [(0u32, 0u32), (1, 0), (1, 1), (2, 1)];
+        let path = funnel_algorithm(&cells, (16.0, 16.0), (80.0, 48.0));
+        assert_eq!(path.len(), 2, "direct line is clear, should be start+end: {:?}", path);
+        assert!(close_enough(path[0], (16.0, 16.0)));
+        assert!(close_enough(path[1], (80.0, 48.0)));
+    }
+
+    #[test]
+    fn funnel_winding_path() {
+        // Winding path around a corner in wall — forces funnel waypoints
+        // Cells go up, right, down — forming a Z shape
+        let cells = [(2u32, 2u32), (2, 1), (3, 1), (3, 2)];
+        let path = funnel_algorithm(&cells, (80.0, 80.0), (112.0, 80.0));
+        assert!(path.len() >= 2, "winding path should have at least start+end: {:?}", path);
+        assert!(close_enough(path[0], (80.0, 80.0)));
+        assert!(close_enough(path[path.len()-1], (112.0, 80.0)));
+    }
+
+    #[test]
+    fn funnel_diagonal_path() {
+        // Diagonal path — no extra waypoints (portals are points)
+        let cells = [(0u32, 0u32), (1, 1), (2, 2)];
+        let path = funnel_algorithm(&cells, (16.0, 16.0), (80.0, 80.0));
+        assert_eq!(path.len(), 2, "diagonal should have only start and end: {:?}", path);
+        assert!(close_enough(path[0], (16.0, 16.0)));
+        assert!(close_enough(path[1], (80.0, 80.0)));
+    }
+
+    #[test]
+    fn funnel_one_cell() {
+        // Single cell — no post-processing
+        let cells = [(2u32, 3u32)];
+        let path = funnel_algorithm(&cells, (16.0, 16.0), (50.0, 70.0));
+        assert_eq!(path, vec![(50.0, 70.0)]);
+    }
+
+    #[test]
+    fn funnel_two_cells() {
+        // Two cells — no post-processing
+        let cells = [(0u32, 0u32), (1, 0)];
+        let path = funnel_algorithm(&cells, (16.0, 16.0), (48.0, 16.0));
+        assert_eq!(path, vec![(16.0, 16.0), (48.0, 16.0)]);
+    }
+
+    #[test]
+    fn funnel_path_does_not_cross_mountain() {
+        // Unit at (0,0), mountain at (1,0), target cell (2,0) is passable.
+        // A* goes around the mountain via (0,1)→(1,1)→(2,1)→(2,0).
+        // Raw funnel produces waypoints where segment (32,32)→(80,16) crosses (1,0).
+        // ensure_passable_waypoints must insert a safe intermediate waypoint.
+        let defs = impassable_defs();
+        let grid = grid_with_walls(5, 5, &[(1, 0)]);
+        let cells = find_path(&grid, &defs, (0, 0), (2, 0))
+            .expect("path should exist around the mountain");
+        assert!(!cells.contains(&(1, 0)), "A* path must not include the mountain cell");
+
+        let start = tile_to_pixel(0, 0);
+        let end = tile_to_pixel(2, 0);
+        let waypoints = funnel_algorithm(&cells, start, end);
+
+        // Run through the safety filter
+        let safe = ensure_passable_waypoints(&waypoints, &cells, &grid, &defs);
+        assert!(safe.len() >= 2, "should have at least start and end");
+
+        // Verify no segment crosses the mountain
+        for i in 1..safe.len() {
+            let from = safe[i - 1];
+            let to = safe[i];
+            let line_cells = cells_on_line(from, to, grid.width, grid.height);
+            assert!(
+                !line_cells.contains(&(1, 0)),
+                "safe segment {:?}→{:?} still crosses (1,0); line cells: {:?}",
+                from, to, line_cells
+            );
+        }
     }
 }
