@@ -15,6 +15,7 @@ export interface GridSnapshotState {
   units: ShallowRef<UnitData[]>;
   selectedUnitId: Ref<number | null>;
   biomeCounts: ComputedRef<BiomeCounts>;
+  hoveredCell: Ref<{ col: number; row: number } | null>;
   selectUnit: (unitId: number) => void;
   clearSelection: () => void;
   sendMoveCommand: (unitId: number, x: number, y: number) => void;
@@ -34,6 +35,7 @@ export function createGridSnapshot(): GridSnapshotState {
   const error = ref<string | null>(null);
   const units = shallowRef<UnitData[]>([]);
   const selectedUnitId = ref<number | null>(null);
+  const hoveredCell = ref<{ col: number; row: number } | null>(null);
 
   let bridge: ReturnType<typeof createWasmBridge> | null = null;
   let rafId: number | null = null;
@@ -131,7 +133,7 @@ export function createGridSnapshot(): GridSnapshotState {
 
   instance = {
     width, height, biomeIds, biomeDefinitions, biomeCounts, status, error,
-    units, selectedUnitId,
+    units, selectedUnitId, hoveredCell,
     selectUnit, clearSelection, sendMoveCommand, toggleDebug,
   };
   (window as any).__snapshot = instance;

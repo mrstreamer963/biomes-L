@@ -16,6 +16,8 @@ export class MapCamera {
   private panStart = { x: 0, y: 0 };
   private containerStart = { x: 0, y: 0 };
   private onClickCb: ClickCallback | null = null;
+  private onPointerMoveCb: ((screenX: number, screenY: number) => void) | null = null;
+  private onPointerLeaveCb: (() => void) | null = null;
 
   onPointerUp: ((e: PointerEvent) => void) | null = null;
 
@@ -27,6 +29,14 @@ export class MapCamera {
 
   onClick(cb: ClickCallback) {
     this.onClickCb = cb;
+  }
+
+  onPointerMove(cb: (screenX: number, screenY: number) => void) {
+    this.onPointerMoveCb = cb;
+  }
+
+  onPointerLeave(cb: () => void) {
+    this.onPointerLeaveCb = cb;
   }
 
   private bindEvents() {
@@ -58,6 +68,11 @@ export class MapCamera {
   };
 
   private handlePointerMove = (e: PointerEvent) => {
+    const rect = this.canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    this.onPointerMoveCb?.(sx, sy);
+
     if (this.isPanning) {
       const dx = e.clientX - this.panStart.x;
       const dy = e.clientY - this.panStart.y;
@@ -98,6 +113,7 @@ export class MapCamera {
     this.pointerDown = null;
     this.wasDrag = false;
     this.canvas.style.cursor = "grab";
+    this.onPointerLeaveCb?.();
   };
 
   private onWheel = (e: WheelEvent) => {

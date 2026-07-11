@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
 import { useGridSnapshot } from "../composables/useGridSnapshot";
-import { createTileMap } from "../game/MapRenderer";
+import { createTileMap, TILE_SIZE } from "../game/MapRenderer";
 import { MapCamera } from "../game/MapCamera";
 import { UnitManager } from "../game/UnitManager";
 
 const container = ref<HTMLDivElement>();
 const isLoading = ref(true);
 
-const { width, height, biomeIds, biomeDefinitions, units, selectedUnitId, selectUnit, clearSelection, sendMoveCommand } = useGridSnapshot();
+const { width, height, biomeIds, biomeDefinitions, units, selectedUnitId, selectUnit, clearSelection, sendMoveCommand, hoveredCell } = useGridSnapshot();
 
 watch(biomeIds, (data) => {
   if (data) {
@@ -63,6 +63,21 @@ onMounted(async () => {
       camera?.destroy();
       camera = new MapCamera(worldContainer, canvas);
       camera.onClick(handleClick);
+
+      camera.onPointerMove((sx, sy) => {
+        const worldX = (sx - worldContainer.position.x) / worldContainer.scale.x;
+        const worldY = (sy - worldContainer.position.y) / worldContainer.scale.y;
+        const col = Math.floor(worldX / TILE_SIZE);
+        const row = Math.floor(worldY / TILE_SIZE);
+        if (col < 0 || col >= width.value || row < 0 || row >= height.value) {
+          hoveredCell.value = null;
+        } else {
+          hoveredCell.value = { col, row };
+        }
+      });
+      camera.onPointerLeave(() => {
+        hoveredCell.value = null;
+      });
     }
   );
 

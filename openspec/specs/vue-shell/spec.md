@@ -86,6 +86,34 @@
 - **WHEN** пользователь открыл приложение
 - **THEN** чекбокс Debug доступен для нажатия, независимо от наличия выбранного юнита
 
+### Requirement: Reactive состояние координат курсора
+
+Система SHALL предоставить реактивное свойство `hoveredCell` в `useGridSnapshot` composable, содержащее координаты тайла под курсором мыши или `null`, если курсор вне сетки.
+
+#### Scenario: hoveredCell обновляется при движении мыши
+
+- **WHEN** мышь движется над canvas
+- **THEN** `hoveredCell.value` содержит `{ col, row }` с актуальными координатами тайла
+
+#### Scenario: hoveredCell сбрасывается при pointerleave
+
+- **WHEN** мышь покидает canvas (pointerleave)
+- **THEN** `hoveredCell.value` равен `null`
+
+### Requirement: Отображение координат тайла в панели статуса
+
+Система SHALL отображать координаты тайла (col, row) под курсором мыши в StatusPanel.vue.
+
+#### Scenario: Показ координат
+
+- **WHEN** `hoveredCell` не null
+- **THEN** в StatusPanel отображается "Cell: {col}, {row}"
+
+#### Scenario: Скрытие при null
+
+- **WHEN** `hoveredCell` равен null
+- **THEN** строка с координатами не отображается (отображается "—")
+
 ### Requirement: Обработка кликов по карте
 
 Система SHALL обрабатывать клики по PixiJS canvas для определения действий игрока:

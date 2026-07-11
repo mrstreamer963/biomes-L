@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useGridSnapshot } from "../composables/useGridSnapshot";
 
-const { width, height, biomeDefinitions, biomeCounts, status, error, units, toggleDebug } = useGridSnapshot();
+const { width, height, biomeDefinitions, biomeCounts, status, error, units, toggleDebug, hoveredCell } = useGridSnapshot();
 
 const debugOn = computed(() => units.value?.some((u) => u.debug) ?? false);
 
@@ -27,6 +27,16 @@ const colorToHex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
       <div class="grid-size">
         {{ width }} × {{ height }}
         <span class="total" v-if="width > 0">({{ width * height }} cells)</span>
+      </div>
+    </div>
+
+    <div class="field" v-if="width > 0">
+      <label>Cursor</label>
+      <div class="cursor-cell">
+        <template v-if="hoveredCell">
+          Cell: {{ hoveredCell.col }}, {{ hoveredCell.row }}
+        </template>
+        <template v-else>—</template>
       </div>
     </div>
 
@@ -89,7 +99,8 @@ label {
   color: #555;
 }
 
-.grid-size {
+.grid-size,
+.cursor-cell {
   font-family: monospace;
   font-size: 0.95rem;
   padding: 0.5rem 0.75rem;
