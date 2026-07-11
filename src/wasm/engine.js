@@ -194,6 +194,10 @@ function __wbg_get_imports() {
             const ret = arg0.call(arg1);
             return ret;
         }, arguments); },
+        __wbg_call_a6e5c5dce5018821: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = arg0.call(arg1, arg2);
+            return ret;
+        }, arguments); },
         __wbg_done_89b2b13e91a60321: function(arg0) {
             const ret = arg0.done;
             return ret;
@@ -264,6 +268,10 @@ function __wbg_get_imports() {
         },
         __wbg_new_da52cf8fe3429cb2: function() {
             const ret = new Object();
+            return ret;
+        },
+        __wbg_new_no_args_ae97b3efc0e29062: function(arg0, arg1) {
+            const ret = new Function(getStringFromWasm0(arg0, arg1));
             return ret;
         },
         __wbg_new_with_length_82f839073dfdaa99: function(arg0) {

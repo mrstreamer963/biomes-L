@@ -367,44 +367,115 @@ pub fn funnel_algorithm(
 }
 
 /// Validates that no segment between consecutive waypoints crosses an impassable
-/// cell. When a segment does cross, inserts the first A* path cell centre that
-/// lies on the segment as a safe intermediate waypoint.
+/// cell. When a segment does cross, walks forward through the original A* path
+/// cells and inserts the first intermediate cell centre that breaks the unsafe
+/// shortcut (the sub-segment from `from` to that centre must be safe).
 pub fn ensure_passable_waypoints(
     waypoints: &[(f64, f64)],
     cells: &[(u32, u32)],
     grid: &GridResource,
     defs: &BiomeDefinitions,
 ) -> Vec<(f64, f64)> {
-    let mut result = Vec::new();
+    let mut result: Vec<(f64, f64)> = Vec::new();
     if waypoints.is_empty() {
         return result;
     }
     result.push(waypoints[0]);
-    for i in 1..waypoints.len() {
+    let mut target_idx = 1usize;
+    while target_idx < waypoints.len() {
         let from = *result.last().unwrap();
-        let to = waypoints[i];
+        let to = waypoints[target_idx];
         let line_cells = cells_on_line(from, to, grid.width, grid.height);
-        let mut safe = true;
-        for &(cx, cy) in &line_cells {
+        let safe = line_cells.iter().all(|&(cx, cy)| {
             let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
             let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
-            if !defs.is_passable(biome) {
-                safe = false;
-                break;
-            }
-        }
+            defs.is_passable(biome)
+        });
         if safe {
             result.push(to);
+            target_idx += 1;
         } else {
-            // Insert the first A* path cell centre found on the segment
-            for &(cx, cy) in &line_cells {
-                if cells.contains(&(cx, cy)) {
-                    result.push(tile_to_pixel(cx, cy));
+            // Walk forward through the A* path and find a cell centre that
+            // creates a safe sub-segment from `from`.
+            let from_cell = pixel_to_tile(from.0, from.1);
+            let start_idx = cells.iter().position(|&c| c == from_cell).unwrap_or(0);
+            let mut inserted = false;
+            for j in (start_idx + 1)..cells.len() {
+                let mid = tile_to_pixel(cells[j].0, cells[j].1);
+                let sub = cells_on_line(from, mid, grid.width, grid.height);
+                let sub_safe = sub.iter().all(|&(cx, cy)| {
+                    let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
+                    let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
+                    defs.is_passable(biome)
+                });
+                if sub_safe {
+                    result.push(mid);
+                    inserted = true;
                     break;
                 }
             }
-            result.push(to);
+            if !inserted {
+                // No safe intermediate found — push `to` anyway and move on
+                result.push(to);
+                target_idx += 1;
+            }
+            // If `mid` was inserted, loop again to check mid→to without advancing target_idx
         }
+    }
+    result
+}
+
+/// Post-processes centered waypoints to prevent diagonal movement that clips
+/// the corner of an impassable cell. For any two consecutive waypoints whose
+/// cells are diagonally adjacent (|dc|=1, |dr|=1), checks the two cells sharing
+/// the crossed corner. If either is impassable, inserts the centre of the
+/// passable shared-edge cell as an intermediate waypoint.
+pub fn avoid_corner_clipping(
+    waypoints: &[(f64, f64)],
+    grid: &GridResource,
+    defs: &BiomeDefinitions,
+) -> Vec<(f64, f64)> {
+    if waypoints.len() < 2 {
+        return waypoints.to_vec();
+    }
+    let mut result = Vec::new();
+    result.push(waypoints[0]);
+    for i in 1..waypoints.len() {
+        let prev = result.last().unwrap();
+        let cur = waypoints[i];
+        let (pc, pr) = pixel_to_tile(prev.0, prev.1);
+        let (cc, cr) = pixel_to_tile(cur.0, cur.1);
+        let dc = cc as i32 - pc as i32;
+        let dr = cr as i32 - pr as i32;
+        if dc.abs() == 1 && dr.abs() == 1 {
+            // Diagonal move — check the two corner-sharing cells
+            let corner_a = (pc.wrapping_add_signed(dc), pr);
+            let corner_b = (pc, pr.wrapping_add_signed(dr));
+            let mut need_break = false;
+            for &(cx, cy) in &[corner_a, corner_b] {
+                if cx < grid.width && cy < grid.height {
+                    let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
+                    let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
+                    if !defs.is_passable(biome) {
+                        need_break = true;
+                        break;
+                    }
+                }
+            }
+            if need_break {
+                for &(cx, cy) in &[corner_a, corner_b] {
+                    if cx < grid.width && cy < grid.height {
+                        let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
+                        let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
+                        if defs.is_passable(biome) {
+                            result.push(tile_to_pixel(cx, cy));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        result.push(cur);
     }
     result
 }

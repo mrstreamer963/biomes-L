@@ -7,9 +7,16 @@ use bevy_ecs::schedule::Schedule;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
+fn log(msg: &str) {
+    let m: JsValue = msg.into();
+    js_sys::Function::new_no_args("console.log(arguments[0])")
+        .call1(&JsValue::NULL, &m)
+        .unwrap_or_default();
+}
+
 use crate::ecs::*;
 use crate::ecs::systems::movement_system;
-use crate::ecs::pathfinding::{ensure_passable_waypoints, find_path, funnel_algorithm, pixel_to_tile, tile_to_pixel};
+use crate::ecs::pathfinding::{avoid_corner_clipping, ensure_passable_waypoints, find_path, funnel_algorithm, pixel_to_tile, tile_to_pixel};
 use crate::noise;
 
 static NEXT_HANDLE: AtomicU32 = AtomicU32::new(1);
@@ -202,7 +209,7 @@ pub fn create_unit(handle: u32, x: f64, y: f64, unit_type: &str) -> u32 {
             Team(0),
             unit_kind,
             Selected(false),
-            DebugFlag(false),
+            DebugFlag(true),
         )).id();
 
         store.unit_map.insert(unit_id, entity);
@@ -242,20 +249,20 @@ pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
             if let Some(cells) = path_cells {
                 let funnel_waypoints = funnel_algorithm(&cells, (pos.x, pos.y), tile_center);
 
-                // Ensure no line segment crosses impassable cells
                 let safe_waypoints = ensure_passable_waypoints(&funnel_waypoints, &cells, &grid, &defs);
 
-                // Snap all waypoints to tile centers so units move cell-to-cell
                 let centered_waypoints: Vec<(f64, f64)> = safe_waypoints.iter().map(|&(wx, wy)| {
                     let (tx, ty) = pixel_to_tile(wx, wy);
                     tile_to_pixel(tx, ty)
                 }).collect();
 
-                // Path contains waypoints excluding start position
-                let path_waypoints: Vec<(f64, f64)> = if centered_waypoints.len() > 1 {
-                    centered_waypoints[1..].to_vec()
+                // Prevent diagonal clipping of impassable corners
+                let clipped = avoid_corner_clipping(&centered_waypoints, &grid, &defs);
+
+                let path_waypoints: Vec<(f64, f64)> = if clipped.len() > 1 {
+                    clipped[1..].to_vec()
                 } else {
-                    centered_waypoints
+                    clipped
                 };
 
                 // Movement target is the center of the clicked tile
@@ -266,9 +273,17 @@ pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
                 // Set the path (waypoints at tile centers)
                 if let Some(mut path) = store.world.get_mut::<Path>(entity) {
                     path.0 = path_waypoints;
+                    let fmt: Vec<String> = path.0.iter().map(|(x,y)| format!("({:.0},{:.0})", x, y)).collect();
+                    let msg: JsValue = format!("PATH: {:?}", fmt).into();
+                    js_sys::Function::new_no_args("console.log(arguments[0])")
+                        .call1(&JsValue::NULL, &msg)
+                        .unwrap_or_default();
                 }
             } else {
                 // No path found — clear target and path
+                js_sys::Function::new_no_args("console.log('NO PATH')")
+                    .call0(&JsValue::NULL)
+                    .unwrap_or_default();
                 if let Some(mut target) = store.world.get_mut::<MovementTarget>(entity) {
                     target.0 = None;
                 }
@@ -432,7 +447,7 @@ pub fn spawn_starting_units(handle: u32) {
             Team(0),
             UnitKind::Scout,
             Selected(false),
-            DebugFlag(false),
+            DebugFlag(true),
         )).id();
         let e2 = store.world.spawn((
             Position { x: spawn_x + 20.0, y: spawn_y },
@@ -444,7 +459,7 @@ pub fn spawn_starting_units(handle: u32) {
             Team(0),
             UnitKind::Scout,
             Selected(false),
-            DebugFlag(false),
+            DebugFlag(true),
         )).id();
         let e3 = store.world.spawn((
             Position { x: spawn_x, y: spawn_y - 25.0 },
@@ -456,7 +471,7 @@ pub fn spawn_starting_units(handle: u32) {
             Team(0),
             UnitKind::Soldier,
             Selected(false),
-            DebugFlag(false),
+            DebugFlag(true),
         )).id();
 
         store.unit_map.insert(unit_id_1, e1);
