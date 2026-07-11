@@ -395,12 +395,14 @@ pub fn ensure_passable_waypoints(
             result.push(to);
             target_idx += 1;
         } else {
-            // Walk forward through the A* path and find a cell centre that
-            // creates a safe sub-segment from `from`.
+            // Find the farthest A* cell from `from` whose centre still creates
+            // a safe sub-segment.  By walking backward (from the end of the
+            // cell list toward the start), we minimise the number of inserted
+            // waypoints while still guaranteeing the segment is safe.
             let from_cell = pixel_to_tile(from.0, from.1);
             let start_idx = cells.iter().position(|&c| c == from_cell).unwrap_or(0);
-            let mut inserted = false;
-            for j in (start_idx + 1)..cells.len() {
+            let mut best: Option<(f64, f64)> = None;
+            for j in ((start_idx + 1)..cells.len()).rev() {
                 let mid = tile_to_pixel(cells[j].0, cells[j].1);
                 let sub = cells_on_line(from, mid, grid.width, grid.height);
                 let sub_safe = sub.iter().all(|&(cx, cy)| {
@@ -409,17 +411,22 @@ pub fn ensure_passable_waypoints(
                     defs.is_passable(biome)
                 });
                 if sub_safe {
-                    result.push(mid);
-                    inserted = true;
+                    best = Some(mid);
                     break;
                 }
             }
-            if !inserted {
+            if let Some(mid) = best {
+                if mid == to {
+                    result.push(to);
+                    target_idx += 1;
+                } else {
+                    result.push(mid);
+                }
+            } else {
                 // No safe intermediate found — push `to` anyway and move on
                 result.push(to);
                 target_idx += 1;
             }
-            // If `mid` was inserted, loop again to check mid→to without advancing target_idx
         }
     }
     result

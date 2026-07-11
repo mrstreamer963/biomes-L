@@ -7,17 +7,17 @@ use bevy_ecs::schedule::Schedule;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
+use crate::ecs::*;
+use crate::ecs::systems::movement_system;
+use crate::ecs::pathfinding::{avoid_corner_clipping, ensure_passable_waypoints, find_path, funnel_algorithm, pixel_to_tile, tile_to_pixel};
+use crate::noise;
+
 fn log(msg: &str) {
     let m: JsValue = msg.into();
     js_sys::Function::new_no_args("console.log(arguments[0])")
         .call1(&JsValue::NULL, &m)
         .unwrap_or_default();
 }
-
-use crate::ecs::*;
-use crate::ecs::systems::movement_system;
-use crate::ecs::pathfinding::{avoid_corner_clipping, ensure_passable_waypoints, find_path, funnel_algorithm, pixel_to_tile, tile_to_pixel};
-use crate::noise;
 
 static NEXT_HANDLE: AtomicU32 = AtomicU32::new(1);
 static NEXT_UNIT_ID: AtomicU32 = AtomicU32::new(1);
@@ -248,13 +248,19 @@ pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
 
             if let Some(cells) = path_cells {
                 let funnel_waypoints = funnel_algorithm(&cells, (pos.x, pos.y), tile_center);
+                log(&format!("FUNNEL: ({:.1},{:.1}) .. {:?}", pos.x, pos.y,
+                    funnel_waypoints.iter().map(|(x,y)| format!("({:.0},{:.0})", x, y)).collect::<Vec<_>>()));
 
                 let safe_waypoints = ensure_passable_waypoints(&funnel_waypoints, &cells, &grid, &defs);
+                log(&format!("SAFE: {:?}",
+                    safe_waypoints.iter().map(|(x,y)| format!("({:.0},{:.0})", x, y)).collect::<Vec<_>>()));
 
                 let centered_waypoints: Vec<(f64, f64)> = safe_waypoints.iter().map(|&(wx, wy)| {
                     let (tx, ty) = pixel_to_tile(wx, wy);
                     tile_to_pixel(tx, ty)
                 }).collect();
+                log(&format!("CENTERED: {:?}",
+                    centered_waypoints.iter().map(|(x,y)| format!("({:.0},{:.0})", x, y)).collect::<Vec<_>>()));
 
                 // Prevent diagonal clipping of impassable corners
                 let clipped = avoid_corner_clipping(&centered_waypoints, &grid, &defs);
