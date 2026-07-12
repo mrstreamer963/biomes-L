@@ -374,6 +374,74 @@ pub fn funnel_algorithm(
     waypoints
 }
 
+/// Checks whether a straight segment between two points is safe to walk.
+///
+/// This is more than "every sampled cell is passable": a segment between two
+/// diagonally-adjacent tile centres passes exactly through the shared vertex
+/// of four tiles. `cells_on_line`'s floor-based sampling resolves that exact
+/// vertex to a single cell (the one with the larger row *and* column, since
+/// `floor` of an already-integer coordinate is a no-op) — so the sampled cell
+/// sequence can look entirely clear even when the vertex is shared with a
+/// wall on the *other* diagonal. `find_path`'s A* already refuses a diagonal
+/// step unless both flanking orthogonal cells are passable (see the
+/// diagonal-adjacency check above); this mirrors that same rule so a
+/// funnel-smoothed shortcut can't offer a route A* would never have taken —
+/// otherwise a unit's real-time, frame-by-frame movement can clip that wall
+/// corner and get its path/target wiped mid-flight.
+fn line_is_safe(from: (f64, f64), to: (f64, f64), grid: &GridResource, defs: &BiomeDefinitions) -> bool {
+    let cell_passable = |(cx, cy): (u32, u32)| -> bool {
+        if cx >= grid.width || cy >= grid.height {
+            return true;
+        }
+        let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
+        let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
+        defs.is_passable(biome)
+    };
+
+    let line_cells = cells_on_line(from, to, grid.width, grid.height);
+    for &cell in &line_cells {
+        if !cell_passable(cell) {
+            return false;
+        }
+    }
+
+    // Corner-vertex check: walk the same samples `cells_on_line` uses and,
+    // whenever a sample lands exactly on a tile corner (both axes on a grid
+    // line at once), verify all four tiles sharing that vertex — not just
+    // the one `floor` happens to pick.
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let dist = dx.hypot(dy);
+    let steps = dist.ceil().max(1.0) as u32;
+    const EPS: f64 = 1e-6;
+
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let x = from.0 + dx * t;
+        let y = from.1 + dy * t;
+
+        let col_f = x / TILE_SIZE;
+        let row_f = y / TILE_SIZE;
+        let on_x_line = (col_f - col_f.round()).abs() < EPS;
+        let on_y_line = (row_f - row_f.round()).abs() < EPS;
+
+        if on_x_line && on_y_line {
+            let col = col_f.round() as i32;
+            let row = row_f.round() as i32;
+            for &(cc, rr) in &[(col - 1, row - 1), (col, row - 1), (col - 1, row), (col, row)] {
+                if cc < 0 || rr < 0 {
+                    continue;
+                }
+                if !cell_passable((cc as u32, rr as u32)) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
+}
+
 /// Validates that no segment between consecutive waypoints crosses an impassable
 /// cell. When a segment does cross, replaces the shortcut with centres from the
 /// original A* path to guarantee safety.
@@ -415,16 +483,7 @@ pub fn ensure_passable_waypoints(
         }
 
         // Check if direct segment is safe
-        let line_cells = cells_on_line(from, to, grid.width, grid.height);
-        let safe = line_cells.iter().all(|&(cx, cy)| {
-            if cx < grid.width && cy < grid.height {
-                let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
-                let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
-                defs.is_passable(biome)
-            } else {
-                true
-            }
-        });
+        let safe = line_is_safe(from, to, grid, defs);
 
         let to_cell = pixel_to_tile(to.0, to.1);
         // Nearest A* cell to `to`, searched forward from our current position
@@ -953,13 +1012,17 @@ mod tests {
             safe_wps
         );
 
-        // Should stay meaningfully smoothed rather than degrading into one
-        // waypoint per A* cell — the buggy version dumped in the whole
-        // remaining path (8 points) after the first off-path miss instead
-        // of a targeted detour (7 points here, one of which is a genuine
-        // funnel-smoothed shortcut around the wall's far corner).
+        // Should stay at least as smoothed as one waypoint per A* cell,
+        // rather than degrading into more waypoints than that — the buggy
+        // desync logic used to dump in the whole remaining path (8 points)
+        // after the first off-path miss. Note this no longer beats the A*
+        // cell count here: the shortcut that used to shave off a waypoint
+        // was itself the corner-clipping bug (see
+        // `ensure_passable_waypoints_rejects_diagonal_corner_clip`) — it cut
+        // exactly through the (15,3) wall's corner, which is why the fixed
+        // version spends one more waypoint (528,144) routing around it.
         assert!(
-            safe_wps.len() < path.len(),
+            safe_wps.len() <= path.len(),
             "expected fewer waypoints than A* cells ({}), got {}: {:?}",
             path.len(),
             safe_wps.len(),
@@ -979,6 +1042,61 @@ mod tests {
                     from, to, cx, cy
                 );
             }
+        }
+    }
+
+    #[test]
+    fn ensure_passable_waypoints_rejects_diagonal_corner_clip() {
+        // Reproduces the live "unit gets stuck" bug: selecting the unit at
+        // (15,1) and commanding it to (16,3) with this exact wall cluster
+        // produces a funnel/safety path whose last leg is a pure diagonal
+        // from tile (15,4)'s centre to tile (16,3)'s centre. That line passes
+        // exactly through the shared corner of (15,3)/(15,4)/(16,3)/(16,4);
+        // `cells_on_line`'s floor-sampling happens to land on (16,4)
+        // (passable) at that exact vertex and never touches (15,3) (a wall),
+        // so the old plain "are all sampled cells passable" check certified
+        // it safe. `find_path`'s own A* would never take this diagonal step
+        // directly, since its diagonal-adjacency rule requires both flanking
+        // orthogonal cells — including (15,3) — to be passable. The runtime
+        // movement system moves frame-by-frame along this "safe" diagonal
+        // and can clip the (15,3) wall corner, wiping the unit's path and
+        // target mid-flight. The fix must reject this shortcut the same way
+        // A* would.
+        let defs = impassable_defs();
+        let walls = vec![(15, 2), (16, 2), (16, 1), (15, 3)];
+        let grid = grid_with_walls(20, 10, &walls);
+
+        let from = tile_to_pixel(15, 4);
+        let to = tile_to_pixel(16, 3);
+        assert!(
+            !line_is_safe(from, to, &grid, &defs),
+            "diagonal shortcut {:?}→{:?} clips the (15,3) wall corner and must not be marked safe",
+            from, to
+        );
+
+        let path = find_path(&grid, &defs, (15, 1), (16, 3))
+            .expect("path should exist around the wall cluster");
+        let start_pixel = tile_to_pixel(15, 1);
+        let end_pixel = tile_to_pixel(16, 3);
+        let funnel_wps = funnel_algorithm(&path, start_pixel, end_pixel);
+        let safe_wps = ensure_passable_waypoints(&funnel_wps, &path, &grid, &defs);
+
+        assert_eq!(
+            *safe_wps.last().unwrap(),
+            end_pixel,
+            "path did not reach the target: {:?}",
+            safe_wps
+        );
+
+        // No consecutive pair of safe waypoints may take the forbidden
+        // diagonal shortcut between (15,4) and (16,3).
+        for pair in safe_wps.windows(2) {
+            let (from, to) = (pair[0], pair[1]);
+            assert!(
+                !(from == tile_to_pixel(15, 4) && to == tile_to_pixel(16, 3)),
+                "safe waypoints still take the corner-clipping diagonal shortcut: {:?}",
+                safe_wps
+            );
         }
     }
 }
