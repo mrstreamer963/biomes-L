@@ -405,10 +405,33 @@ fn line_is_safe(from: (f64, f64), to: (f64, f64), grid: &GridResource, defs: &Bi
         }
     }
 
+    // Diagonal-jump check: when the sampling step doesn't happen to land
+    // exactly on a tile corner, `cells_on_line` jumps straight from one cell
+    // to a diagonal neighbour (no intervening cell at all) — e.g. (27,26) to
+    // (28,27) with nothing sampled at (27,27) or (28,26) in between, even
+    // though the segment passes through their shared corner. Apply the same
+    // flanking-cell rule `find_path` uses for a diagonal A* step.
+    for pair in line_cells.windows(2) {
+        let (c1, r1) = pair[0];
+        let (c2, r2) = pair[1];
+        let dc = c2 as i32 - c1 as i32;
+        let dr = r2 as i32 - r1 as i32;
+        if dc.abs() == 1 && dr.abs() == 1 {
+            let flank1 = ((c1 as i32 + dc) as u32, r1);
+            let flank2 = (c1, (r1 as i32 + dr) as u32);
+            if !cell_passable(flank1) || !cell_passable(flank2) {
+                return false;
+            }
+        }
+    }
+
     // Corner-vertex check: walk the same samples `cells_on_line` uses and,
     // whenever a sample lands exactly on a tile corner (both axes on a grid
     // line at once), verify all four tiles sharing that vertex — not just
-    // the one `floor` happens to pick.
+    // the one `floor` happens to pick. This covers the complementary case:
+    // when the stepping *does* land exactly on a lattice point, the sample
+    // resolves to a single corner-adjacent cell, which can mask a genuine
+    // diagonal jump from the windows-based check above.
     let dx = to.0 - from.0;
     let dy = to.1 - from.1;
     let dist = dx.hypot(dy);
@@ -1154,5 +1177,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn line_is_safe_rejects_diagonal_jump_without_exact_corner_sample() {
+        // Reproduces a second live "unit gets stuck" report: moving from
+        // (20,19) to (30,32) with a wall at (27,27). Unlike the (15,1)→(16,3)
+        // corner-clip case, this segment's length (256√2) doesn't divide
+        // evenly into its sample count, so no sample lands exactly on the
+        // (27,26)/(28,27) corner vertex — `cells_on_line` just jumps straight
+        // from (27,26) to (28,27) with nothing sampled in between. The
+        // corner-vertex check alone (added for the first bug) misses this;
+        // it needs the windows-based diagonal-jump check too.
+        let defs = impassable_defs();
+        let walls = vec![(27, 27)];
+        let grid = grid_with_walls(40, 40, &walls);
+
+        let from = tile_to_pixel(20, 19);
+        let to = tile_to_pixel(28, 27);
+        assert!(
+            !line_is_safe(from, to, &grid, &defs),
+            "diagonal segment {:?}→{:?} clips the (27,27) wall corner and must not be marked safe",
+            from, to
+        );
     }
 }
