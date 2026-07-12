@@ -374,6 +374,37 @@ pub fn funnel_algorithm(
     waypoints
 }
 
+/// Returns the sequence of grid cells a unit would cross when walking a
+/// straight segment, using the same floor-based tile lookup as
+/// `movement_system`.
+fn cells_along_movement(from: (f64, f64), to: (f64, f64)) -> Vec<(u32, u32)> {
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let dist = dx.hypot(dy);
+    if dist < 1e-9 {
+        let col = (from.0 / TILE_SIZE).floor() as u32;
+        let row = (from.1 / TILE_SIZE).floor() as u32;
+        return vec![(col, row)];
+    }
+
+    // Half-pixel steps — dense enough that floor-based cell transitions
+    // cannot skip a cell the unit would actually enter.
+    let steps = (dist * 2.0).ceil().max(1.0) as u32;
+    let mut cells = Vec::new();
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let x = from.0 + dx * t;
+        let y = from.1 + dy * t;
+        let col = (x / TILE_SIZE).floor() as u32;
+        let row = (y / TILE_SIZE).floor() as u32;
+        let cell = (col, row);
+        if cells.last() != Some(&cell) {
+            cells.push(cell);
+        }
+    }
+    cells
+}
+
 /// Checks whether a straight segment between two points is safe to walk.
 ///
 /// This is more than "every sampled cell is passable": a segment between two
@@ -412,6 +443,32 @@ fn line_is_safe(from: (f64, f64), to: (f64, f64), grid: &GridResource, defs: &Bi
     // though the segment passes through their shared corner. Apply the same
     // flanking-cell rule `find_path` uses for a diagonal A* step.
     for pair in line_cells.windows(2) {
+        let (c1, r1) = pair[0];
+        let (c2, r2) = pair[1];
+        let dc = c2 as i32 - c1 as i32;
+        let dr = r2 as i32 - r1 as i32;
+        if dc.abs() == 1 && dr.abs() == 1 {
+            let flank1 = ((c1 as i32 + dc) as u32, r1);
+            let flank2 = (c1, (r1 as i32 + dr) as u32);
+            if !cell_passable(flank1) || !cell_passable(flank2) {
+                return false;
+            }
+        }
+    }
+
+    // Movement-faithful check: `cells_on_line` can report a cardinal detour
+    // (e.g. (28,0)->(28,1)->(27,1)) while the unit's frame-by-frame
+    // movement actually takes a diagonal step (28,0)->(27,1) past an
+    // impassable flank — water at (28,1) on the (29,0)->(26,1) shortcut
+    // is the live repro. Trace the same floor cells `movement_system` uses
+    // and apply the A* diagonal-adjacency rule to each transition.
+    let movement_cells = cells_along_movement(from, to);
+    for &cell in &movement_cells {
+        if !cell_passable(cell) {
+            return false;
+        }
+    }
+    for pair in movement_cells.windows(2) {
         let (c1, r1) = pair[0];
         let (c2, r2) = pair[1];
         let dc = c2 as i32 - c1 as i32;
@@ -1176,6 +1233,131 @@ mod tests {
                     pair[0], pair[1], cx, cy
                 );
             }
+        }
+    }
+
+    fn game_biome_defs() -> BiomeDefinitions {
+        BiomeDefinitions::new(vec![
+            BiomeDef { name: "Plains".into(), passable: true, speed_factor: 1.0, color: 0x7ec850 },
+            BiomeDef { name: "Forest".into(), passable: true, speed_factor: 0.6, color: 0x2d5a27 },
+            BiomeDef { name: "Water".into(), passable: false, speed_factor: 0.0, color: 0x3b82f6 },
+            BiomeDef { name: "Mountain".into(), passable: false, speed_factor: 0.0, color: 0x8b7355 },
+            BiomeDef { name: "Deep Water".into(), passable: false, speed_factor: 0.0, color: 0x1e3a5f },
+            BiomeDef { name: "Sand".into(), passable: true, speed_factor: 0.9, color: 0xeedd88 },
+            BiomeDef { name: "High Mountain".into(), passable: false, speed_factor: 0.0, color: 0xffffff },
+        ])
+    }
+
+    fn grid_from_seed(seed: u64, width: u32, height: u32) -> GridResource {
+        use crate::ecs::generate_grid_biomes;
+        let biome_ids = generate_grid_biomes(seed, width, height);
+        GridResource::new(width, height, biome_ids, vec![0; (width * height) as usize])
+    }
+
+    fn full_pipeline(
+        grid: &GridResource,
+        defs: &BiomeDefinitions,
+        start: (u32, u32),
+        end: (u32, u32),
+    ) -> Option<Vec<(f64, f64)>> {
+        let cells = find_path(grid, defs, start, end)?;
+        let start_px = tile_to_pixel(start.0, start.1);
+        let end_px = tile_to_pixel(end.0, end.1);
+        let funnel_wps = funnel_algorithm(&cells, start_px, end_px);
+        let safe_wps = ensure_passable_waypoints(&funnel_wps, &cells, grid, defs);
+        let centered: Vec<(f64, f64)> = safe_wps
+            .iter()
+            .map(|&(wx, wy)| {
+                let (tx, ty) = pixel_to_tile(wx, wy);
+                tile_to_pixel(tx, ty)
+            })
+            .collect();
+        let clipped = avoid_corner_clipping(&centered, grid, defs);
+        let path_wps = if clipped.len() > 1 {
+            clipped[1..].to_vec()
+        } else {
+            clipped
+        };
+        Some(path_wps)
+    }
+
+    #[test]
+    fn line_is_safe_rejects_diagonal_past_water_flank_at_28_1() {
+        // Live repro: unit at (29,0), target (26,1), water at (28,1).
+        // cells_on_line lists (28,1) as passable-step cardinal hop, but the
+        // unit actually moves (28,0)->(27,1) with impassable flank (28,1).
+        let defs = game_biome_defs();
+        let mut grid = grid_from_seed(42, 50, 50);
+        let idx = (1usize) * 50 + 28;
+        grid.biome_ids[idx] = 2; // Water at (28,1)
+
+        let from = tile_to_pixel(29, 0);
+        let to = tile_to_pixel(26, 1);
+        assert_eq!(cells_along_movement(from, to), vec![(29, 0), (28, 0), (27, 1), (26, 1)]);
+        assert!(
+            !line_is_safe(from, to, &grid, &defs),
+            "funnel shortcut must be rejected: diagonal flank (28,1) is water"
+        );
+    }
+
+    #[test]
+    fn path_from_29_0_to_26_1_avoids_water_shortcut() {
+        let defs = game_biome_defs();
+        let mut grid = grid_from_seed(42, 50, 50);
+        grid.biome_ids[1 * 50 + 28] = 2; // Water at (28,1) — live browser layout
+
+        let start = (29u32, 0u32);
+        let end = (26u32, 1u32);
+        let cells = find_path(&grid, &defs, start, end)
+            .expect("A* path should exist from (29,0) to (26,1)");
+        let path_wps = full_pipeline(&grid, &defs, start, end).unwrap();
+
+        // Must route through (27,0), not the direct funnel shortcut.
+        assert!(
+            path_wps.len() >= 2,
+            "expected intermediate waypoint around water, got {:?}",
+            path_wps
+        );
+        assert_eq!(path_wps[0], tile_to_pixel(27, 0));
+
+        let start_px = tile_to_pixel(start.0, start.1);
+        let end_px = tile_to_pixel(end.0, end.1);
+        let mut chain = vec![start_px];
+        chain.extend(path_wps.iter().copied());
+        chain.push(end_px);
+        for pair in chain.windows(2) {
+            assert!(
+                line_is_safe(pair[0], pair[1], &grid, &defs),
+                "movement segment {:?}→{:?} is unsafe",
+                pair[0],
+                pair[1]
+            );
+        }
+        assert_eq!(cells.last(), Some(&end));
+    }
+
+    #[test]
+    fn line_is_safe_catches_movement_diagonal_not_in_cells_on_line() {
+        // cells_on_line samples (28,0)->(28,1)->(27,1) but actual movement does
+        // (28,0)->(27,1) diagonal past impassable (27,0).
+        let defs = impassable_defs();
+        let mut grid = empty_grid(50, 50);
+        let idx = (0usize) * 50 + 27;
+        grid.biome_ids[idx] = 1; // wall at (27,0)
+
+        let from = tile_to_pixel(29, 0);
+        let to = tile_to_pixel(26, 1);
+        assert!(
+            !line_is_safe(from, to, &grid, &defs),
+            "shortcut must be rejected: movement diagonal (28,0)->(27,1) clips wall at (27,0)"
+        );
+
+        let final_wps = full_pipeline(&grid, &defs, (29, 0), (26, 1)).unwrap();
+        let mut chain = vec![from];
+        chain.extend(final_wps.iter().copied());
+        chain.push(to);
+        for pair in chain.windows(2) {
+            assert!(line_is_safe(pair[0], pair[1], &grid, &defs));
         }
     }
 
