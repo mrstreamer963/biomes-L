@@ -527,9 +527,17 @@ pub fn ensure_passable_waypoints(
     result
 }
 
-/// Post-processes waypoints to prevent movement that clips through impassable cells.
-/// For any two consecutive waypoints, checks if the line segment between them crosses
-/// any impassable cell. If so, inserts intermediate waypoints to create a safe route.
+/// Post-processes a waypoint list with greedy line-of-sight simplification
+/// ("string pulling"). `ensure_passable_waypoints` falls back to dumping every
+/// individual A* path cell whenever a shortcut segment fails its safety check
+/// (see its "not safe" branch) — that fallback has no way to know later cells
+/// are collinear or otherwise mutually visible, so a long straight run through
+/// open terrain ends up as one waypoint per tile instead of just its two
+/// endpoints. This pass removes that redundancy: from each anchor point it
+/// greedily jumps to the *furthest* waypoint still in safe line-of-sight
+/// (checked with the same `line_is_safe` used upstream, so this can never
+/// reintroduce a wall- or corner-clipping shortcut), skipping everything
+/// in between.
 pub fn avoid_corner_clipping(
     waypoints: &[(f64, f64)],
     grid: &GridResource,
@@ -538,34 +546,19 @@ pub fn avoid_corner_clipping(
     if waypoints.len() < 2 {
         return waypoints.to_vec();
     }
-    
-    let mut result = Vec::new();
-    result.push(waypoints[0]);
-    
-    for i in 1..waypoints.len() {
-        let prev = *result.last().unwrap();
-        let cur = waypoints[i];
-        
-        // Check if this segment crosses any impassable cell
-        let line_cells = cells_on_line(prev, cur, grid.width, grid.height);
-        let has_impassable = line_cells.iter().any(|&(cx, cy)| {
-            if cx < grid.width && cy < grid.height {
-                let idx = (cy as usize) * (grid.width as usize) + (cx as usize);
-                let biome = grid.biome_ids.get(idx).copied().unwrap_or(0);
-                !defs.is_passable(biome)
-            } else {
-                false
-            }
-        });
-        
-        if has_impassable {
-            // Segment crosses impassable cells - just push current waypoint (fallback)
-            result.push(cur);
-        } else {
-            result.push(cur);
+
+    let mut result = vec![waypoints[0]];
+    let mut i = 0;
+
+    while i < waypoints.len() - 1 {
+        let mut j = waypoints.len() - 1;
+        while j > i + 1 && !line_is_safe(waypoints[i], waypoints[j], grid, defs) {
+            j -= 1;
         }
+        result.push(waypoints[j]);
+        i = j;
     }
-    
+
     result
 }
 
@@ -1097,6 +1090,69 @@ mod tests {
                 "safe waypoints still take the corner-clipping diagonal shortcut: {:?}",
                 safe_wps
             );
+        }
+    }
+
+    #[test]
+    fn avoid_corner_clipping_collapses_collinear_runs() {
+        // `ensure_passable_waypoints` falls back to one waypoint per A* cell
+        // whenever a shortcut segment fails its safety check — even across
+        // open terrain, once *any* part of the route needed the fallback,
+        // trailing collinear cells (e.g. a long straight run) are dumped
+        // one-by-one instead of being re-collapsed. On an open grid these are
+        // all mutually visible, so the simplification pass should reduce the
+        // whole run down to just its start and end.
+        let defs = passable_defs();
+        let grid = empty_grid(20, 20);
+
+        let collinear_vertical: Vec<(f64, f64)> = (0..8).map(|r| tile_to_pixel(5, r)).collect();
+        let simplified = avoid_corner_clipping(&collinear_vertical, &grid, &defs);
+        assert_eq!(
+            simplified,
+            vec![collinear_vertical[0], *collinear_vertical.last().unwrap()],
+            "collinear vertical run should collapse to its two endpoints: {:?}",
+            simplified
+        );
+
+        let collinear_diagonal: Vec<(f64, f64)> = (0..6).map(|k| tile_to_pixel(k, k)).collect();
+        let simplified = avoid_corner_clipping(&collinear_diagonal, &grid, &defs);
+        assert_eq!(
+            simplified,
+            vec![collinear_diagonal[0], *collinear_diagonal.last().unwrap()],
+            "collinear diagonal run should collapse to its two endpoints: {:?}",
+            simplified
+        );
+    }
+
+    #[test]
+    fn avoid_corner_clipping_keeps_necessary_turn_around_wall() {
+        // A run that must bend around a wall should keep the turning point —
+        // simplification must not cut a safe corner into an unsafe shortcut.
+        let defs = impassable_defs();
+        let walls = vec![(6, 2)];
+        let grid = grid_with_walls(20, 20, &walls);
+
+        let waypoints = vec![
+            tile_to_pixel(5, 2),
+            tile_to_pixel(6, 3),
+            tile_to_pixel(7, 3),
+            tile_to_pixel(7, 2),
+        ];
+        let simplified = avoid_corner_clipping(&waypoints, &grid, &defs);
+
+        assert_eq!(simplified.first(), waypoints.first());
+        assert_eq!(simplified.last(), waypoints.last());
+
+        for pair in simplified.windows(2) {
+            let line_cells = cells_on_line(pair[0], pair[1], grid.width, grid.height);
+            for &(cx, cy) in &line_cells {
+                let biome = grid.biome_ids[(cy as usize) * (grid.width as usize) + (cx as usize)];
+                assert!(
+                    defs.is_passable(biome),
+                    "simplified segment {:?}→{:?} crosses impassable cell ({},{})",
+                    pair[0], pair[1], cx, cy
+                );
+            }
         }
     }
 }
