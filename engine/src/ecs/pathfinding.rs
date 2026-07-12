@@ -232,6 +232,14 @@ pub fn tile_to_pixel(col: u32, row: u32) -> (f64, f64) {
     (col as f64 * TILE_SIZE + 16.0, row as f64 * TILE_SIZE + 16.0)
 }
 
+/// Squared tile-space distance between two cells, used to find the A* path
+/// cell nearest to a waypoint that doesn't land exactly on the path.
+fn cell_dist_sq(a: (u32, u32), b: (u32, u32)) -> i64 {
+    let dc = a.0 as i64 - b.0 as i64;
+    let dr = a.1 as i64 - b.1 as i64;
+    dc * dc + dr * dr
+}
+
 fn cross(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
     (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
 }
@@ -379,16 +387,33 @@ pub fn ensure_passable_waypoints(
     if waypoints.is_empty() {
         return result;
     }
-    
+
     // Start with the first waypoint (converted to cell centre if needed)
     let start_cell = pixel_to_tile(waypoints[0].0, waypoints[0].1);
-    result.push(tile_to_pixel(start_cell.0, start_cell.1));
-    
+    let start_px = tile_to_pixel(start_cell.0, start_cell.1);
+    result.push(start_px);
+
+    // Tracks how far along the A* path we've consumed. We keep this explicit
+    // rather than re-deriving it from `from`'s pixel each iteration: raw funnel
+    // waypoints are portal vertices that sit exactly on tile boundaries, so
+    // floor-based pixel_to_tile can round them into a neighbouring cell (e.g. a
+    // wall) that never appears in `cells`. An exact-match `.position()` lookup
+    // then fails and a naive fallback (index 0 / last index) desyncs `from_idx`
+    // from `to_idx`, silently dropping waypoints or destroying funnel smoothing
+    // for the rest of the route.
+    let mut from_idx = cells.iter().position(|&c| c == start_cell).unwrap_or(0);
+
     let mut target_idx = 1usize;
     while target_idx < waypoints.len() {
         let from = *result.last().unwrap();
         let to = waypoints[target_idx];
-        
+
+        // Skip duplicate waypoints
+        if from == to {
+            target_idx += 1;
+            continue;
+        }
+
         // Check if direct segment is safe
         let line_cells = cells_on_line(from, to, grid.width, grid.height);
         let safe = line_cells.iter().all(|&(cx, cy)| {
@@ -400,30 +425,46 @@ pub fn ensure_passable_waypoints(
                 true
             }
         });
-        
+
+        let to_cell = pixel_to_tile(to.0, to.1);
+        // Nearest A* cell to `to`, searched forward from our current position
+        // only. This always resolves (cells is non-empty here) and can never
+        // move `from_idx` backwards, unlike an exact-match lookup that falls
+        // back to index 0 or the last index when `to` rounds onto an off-path
+        // tile.
+        let nearest_idx = cells
+            .iter()
+            .enumerate()
+            .skip(from_idx)
+            .min_by_key(|&(_, &c)| cell_dist_sq(c, to_cell))
+            .map(|(i, _)| i)
+            .unwrap_or(from_idx);
+
         if safe {
             // Direct segment is safe — use the target waypoint (converted to cell centre)
-            let to_cell = pixel_to_tile(to.0, to.1);
-            result.push(tile_to_pixel(to_cell.0, to_cell.1));
-        } else {
-            // Direct segment crosses impassable cells — use A* path cells as waypoints
-            let from_cell = pixel_to_tile(from.0, from.1);
-            let to_cell = pixel_to_tile(to.0, to.1);
-            
-            // Find the range of A* cells between from_cell and to_cell
-            let from_idx = cells.iter().position(|&c| c == from_cell).unwrap_or(0);
-            let to_idx = cells.iter().position(|&c| c == to_cell).unwrap_or(cells.len() - 1);
-            
-            // Add all intermediate cell centres from the A* path
-            for j in (from_idx + 1)..=to_idx {
-                let cell = cells[j];
-                result.push(tile_to_pixel(cell.0, cell.1));
+            let to_px = tile_to_pixel(to_cell.0, to_cell.1);
+            // Avoid adding duplicate if same as last waypoint
+            if result.last() != Some(&to_px) {
+                result.push(to_px);
             }
+            from_idx = nearest_idx;
+        } else {
+            // Direct segment crosses impassable cells — use A* path cells as waypoints,
+            // up to the nearest path cell to the intended target.
+            for j in (from_idx + 1)..=nearest_idx {
+                let cell = cells[j];
+                let px = tile_to_pixel(cell.0, cell.1);
+                // Avoid duplicates in A* path cells and between consecutive cells
+                if result.last() != Some(&px) {
+                    result.push(px);
+                }
+            }
+            from_idx = nearest_idx;
         }
-        
+
         target_idx += 1;
     }
-    
+
     result
 }
 
@@ -873,6 +914,70 @@ mod tests {
                 assert!(defs.is_passable(biome),
                     "Waypoint segment {:?}→{:?} crosses impassable cell ({},{})",
                     from, to, cx, cy);
+            }
+        }
+    }
+
+    #[test]
+    fn ensure_passable_waypoints_does_not_desync_on_off_path_vertex() {
+        // A raw funnel waypoint can land exactly on a tile boundary and
+        // floor-round into a wall cell that is NOT part of the A* path
+        // (here: (480,64) -> tile (15,2), a wall). An exact-match
+        // `.position()` lookup for that cell fails; a naive fallback
+        // (unwrap_or(0) for `from_idx`, unwrap_or(cells.len()-1) for
+        // `to_idx`) desyncs the two indices so that a *later* segment's
+        // `from_idx` ends up greater than its `to_idx`, silently dropping
+        // that waypoint instead of routing through it — and can also
+        // skip past the real end into the whole rest of the path in one
+        // jump. This must not happen: waypoints should track forward,
+        // never drop the segment that reaches the target, and never cross
+        // a wall.
+        let defs = impassable_defs();
+        let walls = vec![(15, 2), (16, 2), (16, 1), (15, 3)];
+        let grid = grid_with_walls(20, 10, &walls);
+
+        let path = find_path(&grid, &defs, (15, 1), (16, 3))
+            .expect("path should exist around the small wall cluster");
+
+        let start_pixel = tile_to_pixel(15, 1);
+        let end_pixel = tile_to_pixel(16, 3);
+        let funnel_wps = funnel_algorithm(&path, start_pixel, end_pixel);
+        let safe_wps = ensure_passable_waypoints(&funnel_wps, &path, &grid, &defs);
+
+        // Must actually reach the target — the old fallback logic could
+        // desync indices badly enough to stop short.
+        assert_eq!(
+            *safe_wps.last().unwrap(),
+            end_pixel,
+            "path did not reach the target: {:?}",
+            safe_wps
+        );
+
+        // Should stay meaningfully smoothed rather than degrading into one
+        // waypoint per A* cell — the buggy version dumped in the whole
+        // remaining path (8 points) after the first off-path miss instead
+        // of a targeted detour (7 points here, one of which is a genuine
+        // funnel-smoothed shortcut around the wall's far corner).
+        assert!(
+            safe_wps.len() < path.len(),
+            "expected fewer waypoints than A* cells ({}), got {}: {:?}",
+            path.len(),
+            safe_wps.len(),
+            safe_wps
+        );
+
+        // Every consecutive segment must remain safe.
+        for i in 1..safe_wps.len() {
+            let from = safe_wps[i - 1];
+            let to = safe_wps[i];
+            let line_cells = cells_on_line(from, to, grid.width, grid.height);
+            for &(cx, cy) in &line_cells {
+                let biome = grid.biome_ids[(cy as usize) * (grid.width as usize) + (cx as usize)];
+                assert!(
+                    defs.is_passable(biome),
+                    "safe segment {:?}→{:?} crosses impassable cell ({},{})",
+                    from, to, cx, cy
+                );
             }
         }
     }
