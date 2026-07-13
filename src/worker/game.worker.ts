@@ -2,8 +2,8 @@ import init, { create_grid, grid_snapshot, register_biome_definitions, spawn_sta
 import type { BiomeDefinition, GenerationParams } from "../config/biomeConfig";
 import { DEFAULT_GENERATION_PARAMS } from "../config/biomeConfig";
 
-const DEFAULT_WIDTH = 50;
-const DEFAULT_HEIGHT = 50;
+const DEFAULT_WIDTH = 512;
+const DEFAULT_HEIGHT = 512;
 
 let ready = false;
 let handle = 0;
