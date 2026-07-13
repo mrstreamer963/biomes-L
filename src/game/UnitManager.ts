@@ -109,7 +109,7 @@ export class UnitManager {
     }
   }
 
-  hitTest(worldX: number, worldY: number): HitTestResult | null {
+  hitTest(worldX: number, worldY: number, minRadius = 0): HitTestResult | null {
     const entries = Array.from(this.units.entries()).reverse();
 
     for (const [id, unit] of entries) {
@@ -118,7 +118,7 @@ export class UnitManager {
       const radius = unit.unit_type === "Soldier" ? 13 : 10;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist <= radius + 2) {
+      if (dist <= Math.max(radius + 2, minRadius)) {
         return { unitId: id };
       }
     }

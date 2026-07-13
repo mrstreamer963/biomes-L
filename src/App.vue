@@ -2,8 +2,10 @@
 import StatusPanel from "./components/StatusPanel.vue";
 import GameCanvas from "./components/GameCanvas.vue";
 import { createGridSnapshot } from "./composables/useGridSnapshot";
+import { createViewMode } from "./composables/useViewMode";
 
 createGridSnapshot();
+createViewMode();
 </script>
 
 <template>

@@ -1,14 +1,22 @@
 import { Container } from "pixi.js";
 
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 3;
+const DEFAULT_MIN_ZOOM = 0.25;
+const DEFAULT_MAX_ZOOM = 3;
 const PAN_THRESHOLD = 5;
 
 export type ClickCallback = (screenX: number, screenY: number) => void;
+export type ZoomCallback = (scale: number) => void;
+
+export interface MapCameraOptions {
+  minZoom?: number;
+  maxZoom?: number;
+}
 
 export class MapCamera {
   private container: Container;
   private canvas: HTMLCanvasElement;
+  private minZoom: number;
+  private maxZoom: number;
 
   private isPanning = false;
   private wasDrag = false;
@@ -18,12 +26,15 @@ export class MapCamera {
   private onClickCb: ClickCallback | null = null;
   private onPointerMoveCb: ((screenX: number, screenY: number) => void) | null = null;
   private onPointerLeaveCb: (() => void) | null = null;
+  private onZoomChangeCb: ZoomCallback | null = null;
 
   onPointerUp: ((e: PointerEvent) => void) | null = null;
 
-  constructor(container: Container, canvas: HTMLCanvasElement) {
+  constructor(container: Container, canvas: HTMLCanvasElement, options?: MapCameraOptions) {
     this.container = container;
     this.canvas = canvas;
+    this.minZoom = options?.minZoom ?? DEFAULT_MIN_ZOOM;
+    this.maxZoom = options?.maxZoom ?? DEFAULT_MAX_ZOOM;
     this.bindEvents();
   }
 
@@ -37,6 +48,21 @@ export class MapCamera {
 
   onPointerLeave(cb: () => void) {
     this.onPointerLeaveCb = cb;
+  }
+
+  onZoomChange(cb: ZoomCallback) {
+    this.onZoomChangeCb = cb;
+  }
+
+  getScale(): number {
+    return this.container.scale.x;
+  }
+
+  screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
+    return {
+      x: (screenX - this.container.position.x) / this.container.scale.x,
+      y: (screenY - this.container.position.y) / this.container.scale.y,
+    };
   }
 
   private bindEvents() {
@@ -54,6 +80,7 @@ export class MapCamera {
     this.canvas.removeEventListener("pointerleave", this.handlePointerLeave);
     this.canvas.removeEventListener("wheel", this.onWheel);
     this.onClickCb = null;
+    this.onZoomChangeCb = null;
   }
 
   private handlePointerDown = (e: PointerEvent) => {
@@ -121,8 +148,8 @@ export class MapCamera {
 
     const factor = e.deltaY > 0 ? 0.9 : 1.1;
     const newScale = Math.min(
-      MAX_ZOOM,
-      Math.max(MIN_ZOOM, this.container.scale.x * factor)
+      this.maxZoom,
+      Math.max(this.minZoom, this.container.scale.x * factor)
     );
     const actualFactor = newScale / this.container.scale.x;
 
@@ -135,5 +162,6 @@ export class MapCamera {
       mouseY - (mouseY - this.container.position.y) * actualFactor
     );
     this.container.scale.set(newScale);
+    this.onZoomChangeCb?.(newScale);
   };
 }
