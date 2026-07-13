@@ -35,11 +35,11 @@ TBD — управление произвольным набором опред�
 - **WHEN** система вызывает `biome_defs.get_name(0)`
 - **THEN** возвращается имя первого биома из зарегистрированного списка
 
-### Requirement: JS-конфиг биомов
+### Requirement: Конфиг биомов
 
-Система SHALL предоставить JS-константу `DEFAULT_BIOME_DEFINITIONS` в отдельном файле `src/config/biomeConfig.ts`, содержащую массив определений биомов, которые передаются в WASM при инициализации через `register_biome_definitions`.
+Система SHALL предоставить единый файл `src/config/biomes.json` как источник истины для определений биомов и дефолтных параметров генерации. TypeScript импортирует JSON через `src/config/biomeConfig.ts` и передаёт определения в WASM при инициализации через `register_biome_definitions`. Rust читает тот же JSON через `include_str!` в `engine/src/ecs/biome_config.rs`.
 
 #### Scenario: Дефолтный конфиг
 
 - **WHEN** приложение стартует
-- **THEN** biomeConfig.ts экспортирует массив с теми же 4 биомами (Plains, Forest, Water, Mountain) с их текущими свойствами и цветами
+- **THEN** `biomes.json` содержит 7 биомов (Plains, Forest, Water, Mountain, Deep Water, Sand, High Mountain) с их текущими свойствами и цветами, и TS/Rust используют одинаковые данные из этого файла

@@ -1,8 +1,12 @@
 use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
+
+use biome_config::{default_biome_definitions, default_generation_params};
 
 pub mod grid_resource;
 pub mod biome_definitions;
+pub mod biome_config;
 pub mod components;
 pub mod systems;
 pub mod pathfinding;
@@ -55,48 +59,76 @@ pub struct GenerationParams {
 
 impl GenerationParams {
     pub fn new(seed: u64) -> Self {
+        let defaults = default_generation_params();
         Self {
             seed,
-            scale: default_scale(),
-            octaves: default_octaves(),
-            persistence: default_persistence(),
-            lacunarity: default_lacunarity(),
-            elevation_low: default_elevation_low(),
-            elevation_high: default_elevation_high(),
-            moisture_high: default_moisture_high(),
-            elevation_very_low: default_elevation_very_low(),
-            elevation_sand_max: default_elevation_sand_max(),
-            elevation_very_high: default_elevation_very_high(),
+            scale: defaults.scale,
+            octaves: defaults.octaves,
+            persistence: defaults.persistence,
+            lacunarity: defaults.lacunarity,
+            elevation_low: defaults.elevation_low,
+            elevation_high: defaults.elevation_high,
+            moisture_high: defaults.moisture_high,
+            elevation_very_low: defaults.elevation_very_low,
+            elevation_sand_max: defaults.elevation_sand_max,
+            elevation_very_high: defaults.elevation_very_high,
         }
     }
 }
 
-fn default_scale() -> f64 { 8.0 }
-fn default_octaves() -> u32 { 4 }
-fn default_persistence() -> f64 { 0.5 }
-fn default_lacunarity() -> f64 { 2.0 }
-fn default_elevation_low() -> f64 { 0.30 }
-fn default_elevation_high() -> f64 { 0.70 }
-fn default_moisture_high() -> f64 { 0.50 }
-fn default_elevation_very_low() -> f64 { 0.28 }
-fn default_elevation_sand_max() -> f64 { 0.34 }
-fn default_elevation_very_high() -> f64 { 0.72 }
+fn default_scale() -> f64 {
+    default_generation_params().scale
+}
+fn default_octaves() -> u32 {
+    default_generation_params().octaves
+}
+fn default_persistence() -> f64 {
+    default_generation_params().persistence
+}
+fn default_lacunarity() -> f64 {
+    default_generation_params().lacunarity
+}
+fn default_elevation_low() -> f64 {
+    default_generation_params().elevation_low
+}
+fn default_elevation_high() -> f64 {
+    default_generation_params().elevation_high
+}
+fn default_moisture_high() -> f64 {
+    default_generation_params().moisture_high
+}
+fn default_elevation_very_low() -> f64 {
+    default_generation_params().elevation_very_low
+}
+fn default_elevation_sand_max() -> f64 {
+    default_generation_params().elevation_sand_max
+}
+fn default_elevation_very_high() -> f64 {
+    default_generation_params().elevation_very_high
+}
+
+static DEFAULT_BIOME_DEFS: LazyLock<BiomeDefinitions> =
+    LazyLock::new(default_biome_definitions);
+
+fn biome_id(name: &str) -> u16 {
+    DEFAULT_BIOME_DEFS.id_by_name(name).unwrap_or(0)
+}
 
 pub fn biome_from_noise(elevation: f64, moisture: f64, params: &GenerationParams) -> u16 {
     if elevation < params.elevation_very_low {
-        4
+        biome_id("Deep Water")
     } else if elevation < params.elevation_low {
-        2
+        biome_id("Water")
     } else if elevation < params.elevation_sand_max {
-        5
+        biome_id("Sand")
     } else if elevation >= params.elevation_very_high {
-        6
+        biome_id("High Mountain")
     } else if elevation > params.elevation_high {
-        3
+        biome_id("Mountain")
     } else if moisture > params.moisture_high {
-        1
+        biome_id("Forest")
     } else {
-        0
+        biome_id("Plains")
     }
 }
 
@@ -174,24 +206,31 @@ mod tests {
 
     #[test]
     fn biome_sand_is_generated() {
-        // Sand должна появляться как прибрежная полоса между Water и Plains
+        let defs = default_biome_definitions();
+        let sand_id = defs.id_by_name("Sand").expect("Sand biome must exist");
         let biomes = generate_grid_biomes(42, 256, 256);
-        let has_sand = biomes.iter().any(|&id| id == 5);
-        assert!(has_sand, "Sand (ID 5) должна быть сгенерирована на карте 256x256");
+        let has_sand = biomes.iter().any(|&id| id == sand_id);
+        assert!(has_sand, "Sand должна быть сгенерирована на карте 256x256");
     }
 
     #[test]
     fn biome_deep_water_is_generated() {
+        let defs = default_biome_definitions();
+        let deep_water_id = defs.id_by_name("Deep Water").expect("Deep Water biome must exist");
         let biomes = generate_grid_biomes(42, 256, 256);
-        let has_dw = biomes.iter().any(|&id| id == 4);
-        assert!(has_dw, "Deep Water (ID 4) должна быть сгенерирована на карте 256x256");
+        let has_dw = biomes.iter().any(|&id| id == deep_water_id);
+        assert!(has_dw, "Deep Water должна быть сгенерирована на карте 256x256");
     }
 
     #[test]
     fn biome_high_mountain_is_generated() {
+        let defs = default_biome_definitions();
+        let high_mountain_id = defs
+            .id_by_name("High Mountain")
+            .expect("High Mountain biome must exist");
         let biomes = generate_grid_biomes(42, 256, 256);
-        let has_hm = biomes.iter().any(|&id| id == 6);
-        assert!(has_hm, "High Mountain (ID 6) должна быть сгенерирована на карте 256x256");
+        let has_hm = biomes.iter().any(|&id| id == high_mountain_id);
+        assert!(has_hm, "High Mountain должна быть сгенерирована на карте 256x256");
     }
 
     }

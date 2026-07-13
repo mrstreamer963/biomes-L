@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
@@ -13,11 +15,24 @@ pub struct BiomeDef {
 #[derive(Debug, Clone, Resource)]
 pub struct BiomeDefinitions {
     pub definitions: Vec<BiomeDef>,
+    name_to_id: HashMap<String, u16>,
 }
 
 impl BiomeDefinitions {
     pub fn new(definitions: Vec<BiomeDef>) -> Self {
-        Self { definitions }
+        let name_to_id = definitions
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (d.name.clone(), i as u16))
+            .collect();
+        Self {
+            definitions,
+            name_to_id,
+        }
+    }
+
+    pub fn id_by_name(&self, name: &str) -> Option<u16> {
+        self.name_to_id.get(name).copied()
     }
 
     pub fn get_name(&self, id: u16) -> Option<&str> {
@@ -48,58 +63,11 @@ impl BiomeDefinitions {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    fn test_defs() -> BiomeDefinitions {
-        BiomeDefinitions::new(vec![
-            BiomeDef {
-                name: "Plains".into(),
-                passable: true,
-                speed_factor: 1.0,
-                color: 0x7ec850,
-            },
-            BiomeDef {
-                name: "Forest".into(),
-                passable: true,
-                speed_factor: 0.6,
-                color: 0x2d5a27,
-            },
-            BiomeDef {
-                name: "Water".into(),
-                passable: false,
-                speed_factor: 0.0,
-                color: 0x3b82f6,
-            },
-            BiomeDef {
-                name: "Mountain".into(),
-                passable: false,
-                speed_factor: 0.0,
-                color: 0x8b7355,
-            },
-            BiomeDef {
-                name: "Deep Water".into(),
-                passable: false,
-                speed_factor: 0.0,
-                color: 0x1e3a5f,
-            },
-            BiomeDef {
-                name: "Sand".into(),
-                passable: true,
-                speed_factor: 0.9,
-                color: 0xeedd88,
-            },
-            BiomeDef {
-                name: "High Mountain".into(),
-                passable: false,
-                speed_factor: 0.0,
-                color: 0xffffff,
-            },
-        ])
-    }
+    use crate::ecs::biome_config::default_biome_definitions;
 
     #[test]
     fn get_name_returns_some_for_valid_id() {
-        let defs = test_defs();
+        let defs = default_biome_definitions();
         assert_eq!(defs.get_name(0), Some("Plains"));
         assert_eq!(defs.get_name(1), Some("Forest"));
         assert_eq!(defs.get_name(2), Some("Water"));
@@ -111,13 +79,13 @@ mod tests {
 
     #[test]
     fn get_name_returns_none_for_invalid_id() {
-        let defs = test_defs();
+        let defs = default_biome_definitions();
         assert_eq!(defs.get_name(99), None);
     }
 
     #[test]
     fn is_passable_works() {
-        let defs = test_defs();
+        let defs = default_biome_definitions();
         assert!(defs.is_passable(0));
         assert!(defs.is_passable(1));
         assert!(!defs.is_passable(2));
@@ -129,13 +97,13 @@ mod tests {
 
     #[test]
     fn is_passable_returns_false_for_invalid_id() {
-        let defs = test_defs();
+        let defs = default_biome_definitions();
         assert!(!defs.is_passable(99));
     }
 
     #[test]
     fn speed_factor_works() {
-        let defs = test_defs();
+        let defs = default_biome_definitions();
         assert_eq!(defs.speed_factor(0), 1.0);
         assert_eq!(defs.speed_factor(1), 0.6);
         assert_eq!(defs.speed_factor(2), 0.0);
@@ -147,13 +115,13 @@ mod tests {
 
     #[test]
     fn speed_factor_returns_zero_for_invalid_id() {
-        let defs = test_defs();
+        let defs = default_biome_definitions();
         assert_eq!(defs.speed_factor(99), 0.0);
     }
 
     #[test]
     fn get_color_works() {
-        let defs = test_defs();
+        let defs = default_biome_definitions();
         assert_eq!(defs.get_color(0), 0x7ec850);
         assert_eq!(defs.get_color(1), 0x2d5a27);
         assert_eq!(defs.get_color(2), 0x3b82f6);
@@ -165,7 +133,7 @@ mod tests {
 
     #[test]
     fn get_color_returns_black_for_invalid_id() {
-        let defs = test_defs();
+        let defs = default_biome_definitions();
         assert_eq!(defs.get_color(99), 0x000000);
     }
 }

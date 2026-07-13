@@ -676,6 +676,7 @@ pub fn avoid_corner_clipping(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ecs::biome_config::default_biome_definitions;
     use crate::ecs::biome_definitions::BiomeDef;
 
     fn passable_defs() -> BiomeDefinitions {
@@ -1267,18 +1268,6 @@ mod tests {
         }
     }
 
-    fn game_biome_defs() -> BiomeDefinitions {
-        BiomeDefinitions::new(vec![
-            BiomeDef { name: "Plains".into(), passable: true, speed_factor: 1.0, color: 0x7ec850 },
-            BiomeDef { name: "Forest".into(), passable: true, speed_factor: 0.6, color: 0x2d5a27 },
-            BiomeDef { name: "Water".into(), passable: false, speed_factor: 0.0, color: 0x3b82f6 },
-            BiomeDef { name: "Mountain".into(), passable: false, speed_factor: 0.0, color: 0x8b7355 },
-            BiomeDef { name: "Deep Water".into(), passable: false, speed_factor: 0.0, color: 0x1e3a5f },
-            BiomeDef { name: "Sand".into(), passable: true, speed_factor: 0.9, color: 0xeedd88 },
-            BiomeDef { name: "High Mountain".into(), passable: false, speed_factor: 0.0, color: 0xffffff },
-        ])
-    }
-
     fn grid_from_seed(seed: u64, width: u32, height: u32) -> GridResource {
         use crate::ecs::generate_grid_biomes;
         let biome_ids = generate_grid_biomes(seed, width, height);
@@ -1301,7 +1290,7 @@ mod tests {
         // Live repro: unit at (29,0), target (26,1), water at (28,1).
         // cells_on_line lists (28,1) as passable-step cardinal hop, but the
         // unit actually moves (28,0)->(27,1) with impassable flank (28,1).
-        let defs = game_biome_defs();
+        let defs = default_biome_definitions();
         let mut grid = grid_from_seed(42, 50, 50);
         let idx = (1usize) * 50 + 28;
         grid.biome_ids[idx] = 2; // Water at (28,1)
@@ -1317,7 +1306,7 @@ mod tests {
 
     #[test]
     fn path_from_29_0_to_26_1_avoids_water_shortcut() {
-        let defs = game_biome_defs();
+        let defs = default_biome_definitions();
         let mut grid = grid_from_seed(42, 50, 50);
         grid.biome_ids[1 * 50 + 28] = 2; // Water at (28,1) — live browser layout
 
