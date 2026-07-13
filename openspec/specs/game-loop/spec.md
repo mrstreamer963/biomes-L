@@ -1,43 +1,45 @@
 ## Purpose
 
-Real-time game loop для управления игровым временем и обновлением состояния ECS.
+Real-time game loop: UI-тред измеряет время, Worker выполняет tick ECS.
 
 ## Requirements
 
-### Requirement: Game loop в Web Worker
+### Requirement: Game loop на UI-треде
 
-Система SHALL запустить real-time game loop внутри Web Worker после инициализации WASM и спавна стартовых юнитов.
+Система SHALL запускать game loop через `requestAnimationFrame` на main thread после status: "ready" от worker. Worker SHALL НЕ запускать собственный цикл.
 
 #### Scenario: Старт game loop
 
-- **WHEN** worker завершил инициализацию и вызвал `spawn_starting_units`
-- **THEN** worker запускает цикл с `setTimeout(0)` или `setInterval`, который вызывает `tick(handle, dt)` каждый кадр
+- **WHEN** `useGridSnapshot` получает status: "ready"
+- **THEN** main thread начинает rAF-цикл, отправляющий tick в worker
 
 ### Requirement: Передача dt
 
-Система SHALL измерять время между кадрами на UI-треде (через `performance.now()`) и передавать дельту в Worker через сообщение `tick`.
+Main thread SHALL вычислять `dt = (now - lastTime) / 1000` (с ограничением max ~50ms) и отправлять `{ type: "tick", dt }`.
 
 #### Scenario: Tick сообщение
 
 - **WHEN** UI-тред отправляет `{ type: "tick", dt: 0.016 }`
-- **THEN** worker вызывает `tick(handle, 0.016)` и получает snapshot юнитов
+- **THEN** worker вызывает `tick(handle, 0.016)` и отправляет unit-snapshot
 
 ### Requirement: Единый snapshot на кадр
 
-Система SHALL отправлять snapshot юнитов из Worker в main thread только один раз за кадр (после tick).
+Worker SHALL отправлять unit-snapshot один раз за обработанный tick.
 
 #### Scenario: Snapshot после tick
 
-- **WHEN** tick в Worker выполнен
-- **THEN** Worker отправляет `{ type: "unit-snapshot", units: [...] }` в main thread
+- **WHEN** tick выполнен в worker
+- **THEN** worker отправляет `{ type: "unit-snapshot", units: [...] }`
 
 ### Requirement: FPS регулирование
 
-Система SHALL запускать game loop с частотой, привязанной к requestAnimationFrame UI-треда (не чаще 60 FPS).
+Частота привязана к rAF (~60 FPS). При неактивной вкладке rAF не срабатывает — tick не отправляется.
 
-#### Scenario: rAF привязка
+#### Scenario: Неактивная вкладка
 
-- **WHEN** requestAnimationFrame на UI-треде срабатывает
-- **THEN** main thread вычисляет dt и отправляет tick в Worker
-- **WHEN** вкладка неактивна (rAF не срабатывает)
-- **THEN** game loop останавливается (dt не отправляется)
+- **WHEN** вкладка в фоне
+- **THEN** game loop приостанавливается
+
+### Requirement: Остановка при размонтировании
+
+При unmount Vue-компонента: `cancelAnimationFrame`, `worker.terminate()`.

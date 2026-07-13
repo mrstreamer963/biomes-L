@@ -1,77 +1,72 @@
 ## Purpose
 
-Генерация и представление игровой сетки биомов. TBD — цели будут уточнены в процессе разработки.
+Генерация и представление игровой сетки биомов на основе динамического реестра `BiomeDefinitions` и плоского массива `biome_ids`.
 
 ## Requirements
 
-### Requirement: Тип биома и его атрибуты
-Система SHALL определять тип `Biome` как `#[repr(u8)]` enum с вариантами `Plains=0`, `Forest=1`, `Water=2`, `Mountain=3`. Для каждого биома система SHALL предоставлять атрибуты: флаг проходимости (`passable`) и множитель скорости прохождения (`speed_factor`).
+### Requirement: Динамический BiomeId
 
-#### Scenario: Атрибуты проходимых биомов
-- **WHEN** запрашиваются атрибуты биомов `Plains` и `Forest`
-- **THEN** оба возвращают `passable = true` и `speed_factor` в диапазоне `(0.0, 1.0]`
+Система SHALL использовать числовой `BiomeId` (`u16`) как индекс в массиве `BiomeDefinitions.definitions`. Свойства биома (name, passable, speed_factor, color) SHALL храниться в `BiomeDef`, а не в enum.
 
-#### Scenario: Атрибуты непроходимых биомов
-- **WHEN** запрашиваются атрибуты биомов `Water` и `Mountain`
-- **THEN** оба возвращают `passable = false`
+#### Scenario: Индекс совпадает с позицией в конфиге
 
-### Requirement: Структура клетки
-Система SHALL определять структуру `Cell`, содержащую поле `biome: Biome` и поле `resources: u8` (зарезервировано под будущую добычу ресурсов).
+- **WHEN** загружается дефолтный `src/config/biomes.json`
+- **THEN** `BiomeId` 0 соответствует первому биому в массиве `definitions` (Deep Water), а последний индекс — Plains
 
-#### Scenario: Создание клетки с биомом
-- **WHEN** создаётся `Cell` с заданным биомом
-- **THEN** клетка хранит этот биом и имеет `resources = 0` по умолчанию
+### Requirement: GridResource
 
-### Requirement: Структура сетки
-Система SHALL определять структуру `Grid` как двумерную сетку ячеек фиксированного размера `width × height`. Координата `(x, y)` отображается в линейный индекс `y * width + x`. Сетка SHALL хранить массив клеток.
+Система SHALL хранить карту как `GridResource { width, height, biome_ids: Vec<u16>, resources: Vec<u8> }`. Поле `resources` зарезервировано под будущую добычу.
 
 #### Scenario: Доступ к клетке по координатам
-- **WHEN** запрашивается клетка по валидным координатам `(x, y)` в пределах `width × height`
-- **THEN** возвращается клетка с биомом, расположенным по этим координатам
+
+- **WHEN** запрашивается `biome_ids[y * width + x]` при валидных `(x, y)`
+- **THEN** возвращается `BiomeId` клетки
 
 #### Scenario: Координаты вне границ
-- **WHEN** запрашивается клетка по координатам вне границ сетки
-- **THEN** операция возвращает ошибку / `None`, не паникуя
+
+- **WHEN** координаты вне `width × height`
+- **THEN** `cell_at` возвращает biome = 255 (BIOME_NONE), без паники
 
 ### Requirement: Детерминированная генерация карты из seed
 
-Система SHALL генерировать сетку биомов детерминированно из числового `seed`, `GenerationParams`, `width` и `height`. Один и тот же набор `(seed, GenerationParams, width, height)` SHALL давать идентичную карту. Генерация SHALL использовать Perlin noise (FBM) вместо LCG для определения биома каждой клетки.
+Система SHALL генерировать сетку биомов детерминированно из `GenerationParams` (seed, scale, octaves, persistence, lacunarity), `width` и `height`. Правила маппинга шума на биомы SHALL читаться из `src/config/biomes.json` (поле `generation` у каждого биома). Один и тот же набор параметров SHALL давать идентичную карту.
 
 #### Scenario: Воспроизводимость карты
-- **WHEN** генерируются две сетки с одинаковыми `seed`, `GenerationParams`, `width`, `height`
-- **THEN** биомы на одинаковых координатах в обеих сетках совпадают
+
+- **WHEN** генерируются две сетки с одинаковыми `GenerationParams`, `width`, `height`
+- **THEN** `biome_ids` на одинаковых координатах совпадают
 
 #### Scenario: Пространственная когерентность
-- **WHEN** генерируется сетка с noise-генерацией
-- **THEN** соседние клетки имеют одинаковый биом чаще, чем при случайном распределении (коэффициент более 0.3 против ~0.25 для случайного)
+
+- **WHEN** генерируется сетка с Perlin FBM
+- **THEN** соседние клетки чаще имеют одинаковый биом, чем при случайном распределении
 
 #### Scenario: Разные seed дают разные карты
+
 - **WHEN** генерируются две сетки с разными `seed` при одинаковых размерах
 - **THEN** распределение биомов различается
 
 ### Requirement: WASM API для создания и получения сетки
 
-Система SHALL предоставлять WASM-функцию `create_grid(params: GenerationParams, width: u32, height: u32)`, возвращающую числовой дескриптор сетки. `GenerationParams` включает seed, scale, octaves и пороговые значения для маппинга шума на биомы. Система также SHALL предоставлять WASM-функцию `grid_snapshot(handle)`, возвращающую сериализованное представление сетки (`width`, `height`, массив индексов биомов как `Uint8Array`).
+Система SHALL предоставлять:
+- `create_grid(params: GenerationParams, width, height) -> u32` — дескриптор сетки
+- `register_biome_definitions(handle, definitions)` — регистрация свойств биомов для pathfinding/рендера
+- `grid_snapshot(handle)` — `{ width, height, biomeIds, resources }`
+- `cell_at(handle, x, y)` — точечный запрос клетки
 
-#### Scenario: Создание сетки с параметрами
-- **WHEN** вызывается `create_grid({ seed: 42, scale: 8.0, octaves: 4 }, width=8, height=8)`
-- **THEN** возвращается ненулевой числовой дескриптор
+`GenerationParams` SHALL содержать только параметры шума (seed, scale, octaves, persistence, lacunarity). Пороги elevation/moisture SHALL находиться в `biomes.json`, а не в `GenerationParams`.
 
-#### Scenario: Обратная совместимость snapshot
-- **WHEN** вызывается `grid_snapshot(handle)` для сетки, созданной с noise
-- **THEN** возвращается объект с `width`, `height` и массивом байтов, где каждое значение — корректный индекс биома (0..=3)
+#### Scenario: Создание сетки
+
+- **WHEN** вызывается `create_grid({ seed: 42, scale: 8.0, octaves: 4 }, width=50, height=50)`
+- **THEN** возвращается ненулевой дескриптор, карта сгенерирована по правилам из `biomes.json`
+
+#### Scenario: Snapshot сетки
+
+- **WHEN** вызывается `grid_snapshot(handle)` для валидного дескриптора
+- **THEN** возвращается объект с `width`, `height`, массивом `biomeIds` (значения `0..=N-1`, где N — число биомов в конфиге) и `resources`
 
 #### Scenario: Snapshot несуществующего дескриптора
-- **WHEN** вызывается `grid_snapshot` с дескриптором, не соответствующим ни одной созданной сетке
-- **THEN** операция не паникует и возвращает пустой/null-результат
 
-### Requirement: WASM API точечного запроса клетки
-Система SHALL предоставлять WASM-функцию `cell_at(handle, x, y)`, возвращающую данные клетки по координатам.
-
-#### Scenario: Запрос клетки валиден
-- **WHEN** вызывается `cell_at(handle, x, y)` с координатами в границах
-- **THEN** возвращается индекс биома клетки и значение `resources`
-
-#### Scenario: Запрос клетки вне границ
-- **WHEN** вызывается `cell_at(handle, x, y)` с координатами вне границ
-- **THEN** возвращается значение, сигнализирующее об отсутствии клетки (например, индекс биома `255`), без паники
+- **WHEN** вызывается `grid_snapshot` с невалидным дескриптором
+- **THEN** операция не паникует и возвращает null

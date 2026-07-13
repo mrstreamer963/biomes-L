@@ -1,142 +1,84 @@
 ## Purpose
 
-Обеспечить пользовательский интерфейс на Vue 3 для взаимодействия с WASM-движком. TBD — цели будут уточнены в процессе разработки.
+Пользовательский интерфейс на Vue 3 для взаимодействия с WASM-движком.
 
 ## Requirements
 
 ### Requirement: Отображение статуса воркера
-Система SHALL показать статус WebWorker (загружается/готов/ошибка) на форме.
+
+Система SHALL показать статус WebWorker (загружается / готов / ошибка).
 
 #### Scenario: Статус "загружается"
+
 - **WHEN** страница только открыта
-- **THEN** отображается индикатор "Подключение к игровому движку..."
+- **THEN** отображается "Подключение к игровому движку..."
 
 #### Scenario: Статус "готов"
-- **WHEN** worker инициализирован и WASM загружен
+
+- **WHEN** worker отправил status: "ready"
 - **THEN** индикатор сменяется на "Движок готов"
 
-#### Scenario: Статус "ошибка"
-- **WHEN** worker не смог загрузить WASM
-- **THEN** отображается сообщение об ошибке
-
 ### Requirement: Отображение биомов из конфига
-Система SHALL отображать список биомов и их количество из динамического конфига, а не из захардкоженного списка.
+
+Система SHALL отображать список биомов из `biomeDefinitions` (импорт из `biomes.json` через `biomeConfig.ts`).
 
 #### Scenario: Список биомов из конфига
-- **WHEN** приложение загружено и snapshot получен
-- **THEN** StatusPanel показывает строку для каждого биома из `biomeDefinitions`, с его названием, цветом и количеством клеток
 
-#### Scenario: Изменение конфига
-- **WHEN** biomeDefinitions содержит 5 биомов
-- **THEN** StatusPanel показывает 5 строк (а не 4)
+- **WHEN** snapshot получен
+- **THEN** StatusPanel показывает строку для каждого биома: название, цвет, количество клеток
+
+#### Scenario: Дефолтный конфиг — 7 биомов
+
+- **WHEN** используется дефолтный `biomes.json`
+- **THEN** StatusPanel показывает 7 строк
 
 ### Requirement: Макет страницы
-Система SHALL отобразить форму слева и PixiJS canvas справа, с минимальной стилизацией (CSS, без UI-библиотек).
 
-#### Scenario: Две колонки
-- **WHEN** приложение загружено
-- **THEN** форма занимает ~30% ширины слева, canvas — ~70% справа
+Форма слева (~30%), PixiJS canvas справа (~70%).
 
-### Requirement: Reactive состояние юнитов
+### Requirement: Reactive состояние
 
-Система SHALL предоставить реактивное состояние `units` в `useGridSnapshot` composable, обновляемое при получении `unit-snapshot`.
+`useGridSnapshot` SHALL предоставлять: `width`, `height`, `biomeIds`, `biomeDefinitions`, `biomeCounts`, `units`, `selectedUnitId`, `hoveredCell`, `status`, `error`.
 
 #### Scenario: units ref обновляется
 
-- **WHEN** main thread получает `{ type: "unit-snapshot", units: [...] }`
-- **THEN** `useGridSnapshot().units.value` содержит актуальный массив юнитов
+- **WHEN** приходит `{ type: "unit-snapshot", units }`
+- **THEN** `units.value` обновляется
 
 ### Requirement: Game loop на UI-треде
 
-Система SHALL запустить requestAnimationFrame цикл на UI-треде после инициализации. Каждый кадр:
-1. Вычислить dt = (now - lastTime) / 1000
-2. Отправить `{ type: "tick", dt }` в Worker
-3. После получения `unit-snapshot` — обновить состояние
+После status: "ready" система SHALL запустить `requestAnimationFrame` на main thread:
+1. Вычислить dt
+2. Отправить `{ type: "tick", dt }` в worker
+3. Обновить units при получении unit-snapshot
 
 #### Scenario: rAF запущен
 
-- **WHEN** приложение готово (worker отправил status: "ready")
-- **THEN** запускается requestAnimationFrame цикл, отправляющий tick каждые ~16ms
+- **WHEN** worker готов
+- **THEN** main thread отправляет tick ~60 FPS
 
 ### Requirement: Остановка game loop
 
-Система SHALL остановить game loop при демонтировании компонента.
-
-#### Scenario: clean up
-
-- **WHEN** компонент размонтирован
-- **THEN** rAF отменён, worker завершён
+При размонтировании: cancelAnimationFrame, worker.terminate().
 
 ### Requirement: Глобальный debug-флаг
 
-Система SHALL предоставить чекбокс Debug, который включает/выключает показ waypoints у всех юнитов сразу, без необходимости выделять юнит.
+Чекбокс Debug включает/выключает waypoints у всех юнитов через `set-unit-debug`.
 
-#### Scenario: Включение debug без выделения
+### Requirement: hoveredCell
 
-- **WHEN** пользователь включает чекбокс Debug без выделенного юнита
-- **THEN** waypoints отображаются у всех юнитов
+Реактивное `{ col, row } | null` — координаты тайла под курсором.
 
-#### Scenario: Выключение debug
-
-- **WHEN** пользователь выключает чекбокс Debug
-- **THEN** waypoints скрываются у всех юнитов
-
-#### Scenario: Чекбокс активен всегда
-
-- **WHEN** пользователь открыл приложение
-- **THEN** чекбокс Debug доступен для нажатия, независимо от наличия выбранного юнита
-
-### Requirement: Reactive состояние координат курсора
-
-Система SHALL предоставить реактивное свойство `hoveredCell` в `useGridSnapshot` composable, содержащее координаты тайла под курсором мыши или `null`, если курсор вне сетки.
-
-#### Scenario: hoveredCell обновляется при движении мыши
-
-- **WHEN** мышь движется над canvas
-- **THEN** `hoveredCell.value` содержит `{ col, row }` с актуальными координатами тайла
-
-#### Scenario: hoveredCell сбрасывается при pointerleave
-
-- **WHEN** мышь покидает canvas (pointerleave)
-- **THEN** `hoveredCell.value` равен `null`
-
-### Requirement: Отображение координат тайла в панели статуса
-
-Система SHALL отображать координаты тайла (col, row) под курсором мыши в StatusPanel.vue.
-
-#### Scenario: Показ координат
+#### Scenario: Показ координат в StatusPanel
 
 - **WHEN** `hoveredCell` не null
-- **THEN** в StatusPanel отображается "Cell: {col}, {row}"
-
-#### Scenario: Скрытие при null
-
-- **WHEN** `hoveredCell` равен null
-- **THEN** строка с координатами не отображается (отображается "—")
+- **THEN** отображается "Cell: {col}, {row}"
 
 ### Requirement: Обработка кликов по карте
 
-Система SHALL обрабатывать клики по PixiJS canvas для определения действий игрока:
-1. При клике без drag — определить мировые координаты: worldX = (screenX - container.position.x) / container.scale.x
-2. Выполнить hit-test по юнитам в мировых координатах
-3. Если клик по юниту — выделить его
-4. Если клик по пустой клетке и есть выделенный юнит — отправить команду движения
-5. При drag (перемещение > 5px между pointerdown и pointerup) — не считать кликом, выполнять pan
+Клик (без drag > 5px): hit-test юнита → выделение; клик по пустой клетке с выделенным юнитом → `sendMoveCommand`.
 
-**Изменение**: Удалён дублирующийся `canvas.addEventListener('click', ...)`. Обработка клика выполняется только через `MapCamera.handlePointerUp`, который отличает drag от click через флаг `wasDrag`. Это устраняет двойной вызов `sendMoveCommand` при каждом клике.
+#### Scenario: Drag не вызывает движение
 
-#### Scenario: Клик по юниту выделяет его
-
-- **WHEN** пользователь кликает (pointerdown + pointerup без перемещения) по юниту
-- **THEN** юнит выделяется (selectedUnitId устанавливается)
-
-#### Scenario: Клик по пустой клетке двигает юнит
-
-- **WHEN** пользователь кликает по пустой клетке
-- **WHEN** есть выделенный юнит
-- **THEN** `sendMoveCommand` вызывается ровно один раз
-
-#### Scenario: Drag не вызывает команду движения
-
-- **WHEN** пользователь делает pointerdown, перемещает мышь > 5px, затем pointerup
-- **THEN** `sendMoveCommand` НЕ вызывается, выполняется pan камеры
+- **WHEN** pointerdown + перемещение > 5px + pointerup
+- **THEN** выполняется pan, `sendMoveCommand` не вызывается

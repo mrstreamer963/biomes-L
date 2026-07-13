@@ -1,89 +1,69 @@
 ## Purpose
 
-ECS-компоненты и WASM API для управления юнитами в игре.
+ECS-компоненты и WASM API для управления юнитами.
 
 ## Requirements
 
 ### Requirement: Unit ECS компоненты
 
-Система SHALL определить следующие bevy_ecs компоненты для юнитов:
-- `Position { x: f64, y: f64 }` — координаты в пикселях на карте
-- `MovementTarget(Option<(f64, f64)>)` — целевая точка (пиксели), None = стоит
-- `BaseSpeed(f64)` — базовая скорость в px/s
-- `MovementStatus { speed_multiplier: f64, idling: bool }` — состояние движения
-- `Health(u32, u32)` — текущее и максимальное HP
+- `Position { x, y }` — пиксели
+- `MovementTarget(Option<(f64, f64)>)`
+- `BaseSpeed(f64)` — px/s
+- `MovementStatus { speed_multiplier, idling }`
+- `Health(current, max)`
 - `Team(u8)` — 0 = игрок
-- `UnitKind(Scout | Soldier)` — тип юнита
-- `Selected(bool)` — выделен игроком
+- `UnitKind(Scout | Soldier)`
+- `Selected(bool)`
 
-#### Scenario: Создание юнита с компонентами
+#### Scenario: Создание Scout
 
-- **WHEN** вызывается `create_unit(handle, x, y, "Scout")`
-- **THEN** в ECS World создаётся Entity с Position, MovementTarget(None), BaseSpeed(140), MovementStatus { multiplier: 1.0, idling: true }, Health(80, 80), Team(0), UnitKind(Scout), Selected(false)
+- **WHEN** `create_unit(handle, x, y, "Scout")`
+- **THEN** Entity с BaseSpeed(140), Health(80, 80), UnitKind(Scout)
 
 ### Requirement: Ресурсы ECS
 
-Система SHALL предоставить bevy_ecs Resource:
-- `GameTime { delta: f64 }` — время в секундах с последнего tick
-- `GridResource` и `BiomeDefinitions` (существующие типы) SHALL быть помечены `#[derive(Resource)]` и храниться в World
+- `GameTime { delta }`
+- `GridResource`, `BiomeDefinitions` — Resources в World
 
-#### Scenario: GameTime обновляется каждый tick
+#### Scenario: GameTime обновляется
 
-- **WHEN** вызывается `tick(handle, 0.016)`
-- **THEN** `GameTime.delta` в World равно 0.016
+- **WHEN** `tick(handle, 0.016)`
+- **THEN** `GameTime.delta == 0.016`
 
 ### Requirement: Movement system
 
-Система SHALL запускать movement_system каждый tick. Система SHALL для каждого юнита с MovementTarget(Some(target)):
-1. Вычислить направление и расстояние до цели
-2. Если расстояние < 2.0 px → установить MovementStatus.idling = true, очистить Target
-3. Определить биом под текущей позицией юнита (col = (pos.x / TILE_SIZE).floor(), row = (pos.y / TILE_SIZE).floor())
-4. Получить speed_factor из BiomeDefinitions
-5. Если speed_factor == 0 (непроходимый биом) → установить idling = true, не двигаться
-6. Иначе вычислить шаг = base_speed * speed_factor * dt
-7. Проверить, что новая позиция не на непроходимом биоме: ncol = (nx / TILE_SIZE).floor(), nrow = (ny / TILE_SIZE).floor()
-8. Если новая позиция проходима — обновить Position
+Каждый tick movement_system SHALL:
+1. Вычислить направление к MovementTarget
+2. При расстоянии < 2px — idling, очистить target
+3. Определить биом: `col = floor(pos.x / TILE_SIZE)`, `row = floor(pos.y / TILE_SIZE)`
+4. Получить `speed_factor` из BiomeDefinitions по biome_ids
+5. При speed_factor == 0 — не двигаться
+6. Проверить проходимость новой позиции перед обновлением Position
 
-**Изменение**: Формулы определения тайла по позиции изменены с `.round()` на `.floor()` — как в определении биома под юнитом (п.3), так и в проверке проходимости новой позиции (п.7). Это гарантирует, что юнит в позиции x ∈ [0, 32) считается находящимся в тайле col=0, а не col=1.
+#### Scenario: Движение по проходимому биому
 
-#### Scenario: Юнит движется к цели по Plains
+- **WHEN** Scout на Plains (speed_factor=1.0), target далеко, tick(dt=1.0)
+- **THEN** Position приблизился к цели на ~140 px
 
-- **WHEN** юнит Scout (BaseSpeed=140) на Plains (speed_factor=1.0) имеет MovementTarget(Some(100, 100)) и Position(50, 50)
-- **WHEN** tick(handle, 1.0) вызван
-- **THEN** Position приблизился к (100, 100) на 140 px
+#### Scenario: Остановка перед Water
 
-#### Scenario: Юнит останавливается перед Water
+- **WHEN** новая позиция на непроходимом биоме (Water, Mountain, …)
+- **THEN** idling = true, Position не меняется
 
-- **WHEN** юнит движется к цели за Water
-- **WHEN** новая позиция попадает на Water (passable=false)
-- **THEN** MovementStatus.idling = true, Position не меняется
+#### Scenario: Биом на границе тайла
 
-#### Scenario: Юнит останавливается у цели
-
-- **WHEN** юнит в 1 px от MovementTarget
-- **WHEN** tick(handle, dt) вызван
-- **THEN** MovementTarget = None, MovementStatus.idling = true
-
-#### Scenario: Биом на границе тайла определяется корректно
-
-- **WHEN** юнит в позиции (15.5, 15.5) — центр левой половины тайла (0, 0)
-- **WHEN** tick(handle, dt) вызван
-- **THEN** биом определяется как тайл col = floor(15.5/32) = 0, row = floor(15.5/32) = 0
+- **WHEN** юнит в (15.5, 15.5)
+- **THEN** тайл col=0, row=0 (floor, не round)
 
 ### Requirement: Snapshot юнитов
 
-Система SHALL предоставить функцию, собирающую snapshot всех юнитов из World для передачи в JS.
-
-#### Scenario: Snapshot после tick
-
-- **WHEN** tick(handle, dt) вызван
-- **THEN** возвращается массив объектов с полями: id, x, y, health, maxHealth, unitType, team, selected
+`tick` SHALL возвращать массив с полями: id, x, y, health, maxHealth, unitType, team, selected, debug, waypoints.
 
 ### Requirement: Стартовые юниты
 
-Система SHALL спавнить 3 юнитов при старте: 2 Scout и 1 Soldier. Юниты SHALL появиться в центре карты на Plains (если центральная клетка проходима).
+`spawn_starting_units` SHALL создать 2 Scout и 1 Soldier в центре карты на проходимом биоме.
 
-#### Scenario: Спавн стартовых юнитов
+#### Scenario: Спавн
 
-- **WHEN** `spawn_starting_units(handle)` вызван после создания грида
-- **THEN** в World есть 3 Entity с UnitKind, и их позиции находятся в центре карты на проходимом биоме
+- **WHEN** `spawn_starting_units(handle)` после create_grid
+- **THEN** 3 Entity в центре, на проходимой клетке (если центр проходим)

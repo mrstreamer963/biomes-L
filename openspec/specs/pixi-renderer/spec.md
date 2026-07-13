@@ -1,66 +1,49 @@
 ## Purpose
 
-Обеспечить рендеринг игровой графики через PixiJS v8 внутри Vue-приложения. TBD — цели будут уточнены в процессе разработки.
+Рендеринг игровой графики через PixiJS v8 внутри Vue-приложения.
 
 ## Requirements
 
 ### Requirement: Инициализация PixiJS v8
-Система SHALL инициализировать PIXI.Application v8 внутри Vue-компонента `GameCanvas.vue` при монтировании.
+
+Система SHALL инициализировать `PIXI.Application` в `GameCanvas.vue` при монтировании.
 
 #### Scenario: Создание Application
-- **WHEN** компонент `GameCanvas.vue` смонтирован
-- **THEN** создаётся PIXI.Application с настройками по умолчанию и добавляется в DOM
 
-### Requirement: Демо-рендер
-Система SHALL отобразить демо-графику (цветной круг) на PixiJS canvas после инициализации.
+- **WHEN** `GameCanvas.vue` смонтирован
+- **THEN** создаётся PIXI.Application и добавляется в DOM
 
-#### Scenario: Отрисовка круга
-- **WHEN** PIXI.Application инициализирован
-- **THEN** на сцене отображается как минимум один графический примитив (круг/прямоугольник)
+### Requirement: Отрисовка тайловой карты
+
+Система SHALL отображать карту биомов через `MapRenderer.createTileMap(biomeIds, biomeDefinitions, width, height)` после получения grid-snapshot.
+
+#### Scenario: Карта поверх canvas
+
+- **WHEN** `biomeIds` и `biomeDefinitions` доступны
+- **THEN** на сцене отображается цветная тайловая сетка `TILE_SIZE = 32`
 
 ### Requirement: Canvas встраивается в layout
-Система SHALL разместить PixiJS canvas внутри Vue-компонента с адаптивным размером.
 
-#### Scenario: Canvas занимает контейнер
-- **WHEN** `GameCanvas.vue` отрендерен
-- **THEN** canvas занимает 100% ширины и высоты родительского контейнера
+Canvas SHALL занимать 100% родительского контейнера.
 
 ### Requirement: UnitManager рендер
 
-Система SHALL добавить `UnitManager` поверх тайловой карты. UnitManager отображает юнитов как круги с health bar и рамкой выделения.
+`UnitManager` SHALL отображаться поверх тайлов: круги юнитов, health bar, рамка выделения, waypoints в debug-режиме.
 
 #### Scenario: UnitManager поверх тайлов
 
 - **WHEN** тайловая карта создана
-- **THEN** UnitManager.addTo(worldContainer) добавляет слой юнитов поверх тайлов
+- **THEN** `UnitManager` добавлен в world container поверх тайлов
 
-#### Scenario: Обновление юнитов каждый кадр
+#### Scenario: Обновление каждый кадр
 
-- **WHEN** приходит `unit-snapshot` с новыми данными
-- **THEN** UnitManager.update(units) перерисовывает круги, health bars, рамки
+- **WHEN** приходит unit-snapshot
+- **THEN** `UnitManager.update(units)` перерисовывает юнитов
 
 ### Requirement: Hit test на canvas
 
-Система SHALL обрабатывать pointerdown на canvas для определения, попал ли клик по юниту.
+Pointerdown/up на canvas: преобразование в мировые координаты с учётом камеры, hit-test юнитов (reverse order).
 
-#### Scenario: Определение попадания
+### Requirement: Pan только при зажатой кнопке
 
-- **WHEN** игрок кликает на canvas
-- **THEN** координаты клика преобразуются в мировые координаты (с учётом позиции и масштаба камеры)
-- **THEN** проверяется каждый юнит (reverse order): расстояние от клика до центра юнита < радиуса юнита
-- **THEN** возвращается первый попавшийся юнит, или null
-
-### Requirement: Pan карты только при зажатой кнопке
-Система SHALL начинать перетаскивание (pan) карты только после нажатия кнопки мыши и перемещения на пороговое расстояние.
-
-#### Scenario: Движение без нажатия не двигает карту
-- **WHEN** пользователь двигает мышь над canvas без нажатой кнопки
-- **THEN** карта остаётся неподвижной
-
-#### Scenario: Drag с зажатой кнопкой двигает карту
-- **WHEN** пользователь зажимает кнопку мыши и двигает мышь более чем на 5px
-- **THEN** карта панорамируется вслед за курсором
-
-#### Scenario: Отпускание кнопки останавливает pan
-- **WHEN** пользователь отпускает кнопку мыши после drag
-- **THEN** карта перестаёт двигаться
+Pan начинается после pointerdown + перемещение > 5px. Движение без нажатой кнопки не двигает карту.

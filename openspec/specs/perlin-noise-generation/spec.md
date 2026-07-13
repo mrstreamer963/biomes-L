@@ -1,85 +1,103 @@
 ## Purpose
 
-TBD — Perlin noise generation and biome mapping for procedural world generation.
+Perlin noise (FBM) для процедурной генерации карты: два независимых слоя (elevation, moisture) и маппинг на биомы по правилам из `biomes.json`.
 
 ## Requirements
 
 ### Requirement: 2D Perlin noise функция
 
-Система SHALL реализовать функцию `perlin_2d(x: f64, y: f64, seed: i32) -> f64`, возвращающую значение Perlin noise в диапазоне `[-1, 1]` для произвольных координат `(x, y)`.
+Система SHALL реализовать `perlin_2d(x, y, seed) -> f64` в диапазоне `[-1, 1]`.
 
 #### Scenario: Значение noise в нуле
-- **WHEN** вызывается `perlin_2d(0.0, 0.0, seed=42)` с любым seed
-- **THEN** возвращается `0.0` (гарантировано алгоритмом)
+
+- **WHEN** вызывается `perlin_2d(0.0, 0.0, seed)` с любым seed
+- **THEN** возвращается `0.0`
 
 #### Scenario: Детерминизм по seed
-- **WHEN** вызывается `perlin_2d(x, y, seed)` дважды с одинаковыми аргументами
-- **THEN** оба вызова возвращают одинаковое значение
 
-#### Scenario: Разные seed дают разные значения
-- **WHEN** вызывается `perlin_2d(x, y, seed1)` и `perlin_2d(x, y, seed2)` с разными seed
-- **THEN** значения различаются как минимум в 50% случаев
+- **WHEN** `perlin_2d(x, y, seed)` вызывается дважды с одинаковыми аргументами
+- **THEN** оба вызова возвращают одинаковое значение
 
 ### Requirement: FBM (Fractional Brownian Motion)
 
-Система SHALL реализовать функцию `fbm(x: f64, y: f64, octaves: u32, lacunarity: f64, persistence: f64, scale: f64, seed: i32) -> f64`, суммирующую несколько октав Perlin noise с изменяющейся амплитудой и частотой. Результат SHALL быть нормализован к диапазону `[-1, 1]` независимо от количества октав.
+Система SHALL реализовать `fbm(x, y, octaves, lacunarity, persistence, scale, seed) -> f64`, нормализованный к `[-1, 1]`.
 
 #### Scenario: FBM с одной октавой
-- **WHEN** вызывается `fbm(x, y, octaves=1, scale=1.0, ...)`
-- **THEN** результат эквивалентен `perlin_2d(x * 1.0, y * 1.0, seed)`
 
-#### Scenario: FBM с несколькими октавами
-- **WHEN** вызывается `fbm(x, y, octaves=4, persistence=0.5, lacunarity=2.0, scale=1.0, seed)`
-- **THEN** результат содержит вклад 4 октав с уменьшающейся амплитудой
+- **WHEN** `fbm(..., octaves=1, scale=1.0, ...)`
+- **THEN** результат эквивалентен `perlin_2d(x * scale, y * scale, seed)`
 
 #### Scenario: Детерминизм FBM
-- **WHEN** вызывается `fbm` с одинаковыми параметрами дважды
+
+- **WHEN** `fbm` вызывается дважды с одинаковыми параметрами
 - **THEN** возвращаются идентичные значения
+
+### Requirement: Два noise-слоя на клетку
+
+При генерации карты система SHALL для каждой клетки `(x, y)` вычислять:
+- `elevation` — FBM с `seed` из `GenerationParams`, координаты `nx = x/width`, `ny = y/height`, нормализация `(fbm + 1.0) / 2.0` → `[0, 1]`
+- `moisture` — FBM с `seed + 1000`, те же параметры и нормализация
+
+#### Scenario: Независимость слоёв
+
+- **WHEN** используются разные seed для elevation и moisture
+- **THEN** поля elevation и moisture пространственно когерентны, но не идентичны
 
 ### Requirement: Маппинг noise → biome
 
-Система SHALL предоставлять функцию `biome_from_noise(elevation: f64, moisture: f64, thresholds: BiomeThresholds) -> u16`, которая по двум noise-значениям и пороговой таблице определяет индекс биома.
+Система SHALL предоставлять `biome_from_noise(elevation, moisture) -> u16`, который применяет правила из `biomes.json`:
+- обход `definitions` **в порядке массива** (индекс 0 проверяется первым)
+- для каждого биома с полем `generation` проверяются условия (все заданные поля должны совпасть)
+- первый подошедший биом возвращает свой индекс
+- биом с `generation: {}` совпадает всегда (fallback)
 
-#### Scenario: Определение Water
-- **WHEN** `elevation < thresholds.elevation_low`
-- **THEN** возвращается id биома, соответствующего Water
+Поддерживаемые условия в `generation`:
+- `elevationLt` — elevation < порог
+- `elevationGt` — elevation > порог
+- `elevationGte` — elevation >= порог
+- `moistureGt` — moisture > порог
 
-#### Scenario: Определение Mountain
-- **WHEN** `elevation > thresholds.elevation_high`
-- **THEN** возвращается id биома, соответствующего Mountain
+#### Scenario: Deep Water при низкой высоте
 
-#### Scenario: Определение Forest/Plains по влажности
-- **WHEN** `elevation` в среднем диапазоне и `moisture > thresholds.moisture_high`
-- **THEN** возвращается id биома леса
-- **WHEN** `elevation` в среднем диапазоне и `moisture <= thresholds.moisture_high`
-- **THEN** возвращается id биома равнин
+- **WHEN** elevation = 0.1, любая moisture
+- **THEN** возвращается id биома Deep Water (0 в дефолтном конфиге)
+
+#### Scenario: Water при средне-низкой высоте
+
+- **WHEN** elevation = 0.29, любая moisture
+- **THEN** возвращается id биома Water (1)
+
+#### Scenario: Forest при высокой влажности на суше
+
+- **WHEN** elevation = 0.5, moisture = 0.6
+- **THEN** возвращается id биома Forest (5)
+
+#### Scenario: Plains как fallback
+
+- **WHEN** elevation = 0.5, moisture = 0.3
+- **THEN** возвращается id биома Plains (6)
 
 ### Requirement: GenerationParams
 
-Система SHALL определить структуру `GenerationParams` с полями:
-- `seed: u64` — seed для генерации permutation table
-- `scale: f64` — базовый пространственный масштаб noise (по умолчанию 8.0)
-- `octaves: u32` — количество октав FBM (по умолчанию 4)
-- `persistence: f64` — коэффициент амплитуды октав (по умолчанию 0.5)
-- `lacunarity: f64` — коэффициент частоты октав (по умолчанию 2.0)
-- `elevation_low: f64` — порог воды (по умолчанию 0.30)
-- `elevation_high: f64` — порог гор (по умолчанию 0.70)
-- `moisture_high: f64` — порог леса (по умолчанию 0.50)
+Система SHALL определить `GenerationParams` с полями:
+- `seed: u64`
+- `scale: f64` (по умолчанию 8.0)
+- `octaves: u32` (по умолчанию 4)
+- `persistence: f64` (по умолчанию 0.5)
+- `lacunarity: f64` (по умолчанию 2.0)
 
-Все значения SHALL иметь дефолты, чтобы можно было вызвать `create_grid` только с seed.
+Дефолты SHALL загружаться из `biomes.json` → `generationParams`.
 
-#### Scenario: Дефолтные значения
+#### Scenario: Дефолтные значения шума
+
 - **WHEN** `GenerationParams::new(seed=42)` создаётся с одним seed
-- **THEN** scale = 8.0, octaves = 4, persistence = 0.5, lacunarity = 2.0, elevation_low = 0.30, elevation_high = 0.70, moisture_high = 0.50
+- **THEN** scale = 8.0, octaves = 4, persistence = 0.5, lacunarity = 2.0
 
-### Requirement: Обновлённый create_grid
+### Requirement: create_grid через noise
 
-Система SHALL предоставлять WASM-функцию `create_grid(params: GenerationParams, width: u32, height: u32) -> u32`, которая генерирует сетку биомов с использованием noise-функций вместо LCG.
+Система SHALL генерировать `biome_ids` в `create_grid` через `biome_from_noise`, а не через LCG.
 
-#### Scenario: Создание сетки с шумом
-- **WHEN** вызывается `create_grid(params, width=8, height=8)`
-- **THEN** возвращается ненулевой дескриптор, и биомы образуют пространственно-когерентные зоны (соседние клетки чаще имеют одинаковый биом)
+#### Scenario: Snapshot после noise-генерации
 
-#### Scenario: Наследование snapshot API
-- **WHEN** вызывается `grid_snapshot(handle)` для сетки, созданной через noise
-- **THEN** возвращается валидный snapshot с корректными biomeIds (0..=3)
+- **WHEN** вызывается `grid_snapshot(handle)` после `create_grid`
+- **THEN** `biomeIds` содержит значения в диапазоне `0..=(definitions.len() - 1)`
