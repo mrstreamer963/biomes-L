@@ -16,6 +16,8 @@ pub struct BaseSpeed(pub f64);
 pub struct MovementStatus {
     pub speed_multiplier: f64,
     pub idling: bool,
+    /// How many times path recalculation was attempted after a blocked step.
+    pub path_recalc_attempts: u8,
 }
 
 impl Default for MovementStatus {
@@ -23,6 +25,7 @@ impl Default for MovementStatus {
         Self {
             speed_multiplier: 1.0,
             idling: true,
+            path_recalc_attempts: 0,
         }
     }
 }

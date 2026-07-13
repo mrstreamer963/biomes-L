@@ -9,15 +9,8 @@ use wasm_bindgen::JsValue;
 
 use crate::ecs::*;
 use crate::ecs::systems::movement_system;
-use crate::ecs::pathfinding::{avoid_corner_clipping, ensure_passable_waypoints, find_path, funnel_algorithm, pixel_to_tile, tile_to_pixel};
+use crate::ecs::pathfinding::{build_unit_path, pixel_to_tile, tile_to_pixel};
 use crate::noise;
-
-fn log(msg: &str) {
-    let m: JsValue = msg.into();
-    js_sys::Function::new_no_args("console.log(arguments[0])")
-        .call1(&JsValue::NULL, &m)
-        .unwrap_or_default();
-}
 
 static NEXT_HANDLE: AtomicU32 = AtomicU32::new(1);
 static NEXT_UNIT_ID: AtomicU32 = AtomicU32::new(1);
@@ -232,8 +225,7 @@ pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
                 None => return,
             };
 
-            // Convert to tile coordinates
-            let start_tile = pixel_to_tile(pos.x, pos.y);
+            // Convert click to tile center
             let end_tile = pixel_to_tile(x, y);
 
             // Snap movement target to tile center
@@ -243,40 +235,16 @@ pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
             let grid = store.world.get_resource::<GridResource>().unwrap();
             let defs = store.world.get_resource::<BiomeDefinitions>().unwrap();
 
-            // Find path
-            let path_cells = find_path(&grid, &defs, start_tile, end_tile);
-
-            if let Some(cells) = path_cells {
-                let funnel_waypoints = funnel_algorithm(&cells, (pos.x, pos.y), tile_center);
-                log(&format!("FUNNEL: ({:.1},{:.1}) .. {:?}", pos.x, pos.y,
-                    funnel_waypoints.iter().map(|(x,y)| format!("({:.0},{:.0})", x, y)).collect::<Vec<_>>()));
-
-                let safe_waypoints = ensure_passable_waypoints(&funnel_waypoints, &cells, &grid, &defs);
-                log(&format!("SAFE: {:?}",
-                    safe_waypoints.iter().map(|(x,y)| format!("({:.0},{:.0})", x, y)).collect::<Vec<_>>()));
-
-                let centered_waypoints: Vec<(f64, f64)> = safe_waypoints.iter().map(|&(wx, wy)| {
-                    let (tx, ty) = pixel_to_tile(wx, wy);
-                    tile_to_pixel(tx, ty)
-                }).collect();
-                log(&format!("CENTERED: {:?}",
-                    centered_waypoints.iter().map(|(x,y)| format!("({:.0},{:.0})", x, y)).collect::<Vec<_>>()));
-
-                // Prevent diagonal clipping of impassable corners
-                let clipped = avoid_corner_clipping(&centered_waypoints, &grid, &defs);
-
-                let path_waypoints: Vec<(f64, f64)> = if clipped.len() > 1 {
-                    clipped[1..].to_vec()
-                } else {
-                    clipped
-                };
-
-                // Movement target is the center of the clicked tile
+            if let Some(path_waypoints) = build_unit_path(&grid, &defs, (pos.x, pos.y), tile_center) {
                 if let Some(mut target) = store.world.get_mut::<MovementTarget>(entity) {
                     target.0 = Some(tile_center);
                 }
 
-                // Set the path (waypoints at tile centers)
+                if let Some(mut status) = store.world.get_mut::<MovementStatus>(entity) {
+                    status.path_recalc_attempts = 0;
+                    status.idling = false;
+                }
+
                 if let Some(mut path) = store.world.get_mut::<Path>(entity) {
                     path.0 = path_waypoints;
                     let fmt: Vec<String> = path.0.iter().map(|(x,y)| format!("({:.0},{:.0})", x, y)).collect();
@@ -295,6 +263,10 @@ pub fn set_unit_target(handle: u32, unit_id: u32, x: f64, y: f64) {
                 }
                 if let Some(mut path) = store.world.get_mut::<Path>(entity) {
                     path.0.clear();
+                }
+                if let Some(mut status) = store.world.get_mut::<MovementStatus>(entity) {
+                    status.path_recalc_attempts = 0;
+                    status.idling = true;
                 }
             }
         }

@@ -4,9 +4,42 @@ use bevy_ecs::query::With;
 use crate::ecs::components::*;
 use crate::ecs::biome_definitions::BiomeDefinitions;
 use crate::ecs::grid_resource::GridResource;
+use crate::ecs::pathfinding::build_unit_path;
 use crate::ecs::GameTime;
 
 const TILE_SIZE: f64 = 32.0;
+const MAX_PATH_RECALC_ATTEMPTS: u8 = 3;
+
+/// Blocked step: don't move, try to rebuild the path toward the existing goal.
+fn handle_blocked_step(
+    pos: (f64, f64),
+    goal: (f64, f64),
+    grid: &GridResource,
+    defs: &BiomeDefinitions,
+    path: &mut Path,
+    status: &mut MovementStatus,
+    target: &mut MovementTarget,
+) {
+    status.path_recalc_attempts = status.path_recalc_attempts.saturating_add(1);
+
+    if status.path_recalc_attempts <= MAX_PATH_RECALC_ATTEMPTS {
+        if let Some(new_path) = build_unit_path(grid, defs, pos, goal) {
+            path.0 = new_path;
+            status.idling = false;
+            return;
+        }
+    }
+
+    if status.path_recalc_attempts >= MAX_PATH_RECALC_ATTEMPTS {
+        path.0.clear();
+        target.0 = None;
+        status.idling = true;
+        status.path_recalc_attempts = 0;
+        return;
+    }
+
+    status.idling = true;
+}
 
 pub fn movement_system(
     time: Res<GameTime>,
@@ -37,6 +70,7 @@ pub fn movement_system(
 
         // Arrived at current waypoint
         if dist < 2.0 {
+            status.path_recalc_attempts = 0;
             if !path.0.is_empty() {
                 // Advance to next waypoint
                 path.0.remove(0);
@@ -62,14 +96,19 @@ pub fn movement_system(
             .unwrap_or(1.0);
 
         if speed_factor == 0.0 {
-            path.0.clear();
-            target.0 = None;
-            status.idling = true;
+            handle_blocked_step(
+                (pos.x, pos.y),
+                (tx, ty),
+                &grid,
+                &defs,
+                &mut path,
+                &mut status,
+                &mut target,
+            );
             continue;
         }
 
         status.speed_multiplier = speed_factor;
-        status.idling = false;
 
         let step = speed.0 * speed_factor * dt;
         let nx = pos.x + (dx / dist) * step;
@@ -85,12 +124,21 @@ pub fn movement_system(
             .unwrap_or(false);
 
         if !npassable {
-            // Clear movement state to prevent permanent stalling
-            path.0.clear();
-            target.0 = None;
-            status.idling = true;
+            // Don't enter impassable tile — recalculate path from current position
+            handle_blocked_step(
+                (pos.x, pos.y),
+                (tx, ty),
+                &grid,
+                &defs,
+                &mut path,
+                &mut status,
+                &mut target,
+            );
             continue;
         }
+
+        status.idling = false;
+        status.path_recalc_attempts = 0;
 
         // Clamp to map bounds
         let max_x = (grid.width as f64) * TILE_SIZE;

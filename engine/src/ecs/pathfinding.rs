@@ -607,6 +607,37 @@ pub fn ensure_passable_waypoints(
     result
 }
 
+/// Builds movement waypoints from a pixel position to a pixel goal using the
+/// full A* → funnel → safety → string-pull pipeline.
+/// Returns waypoints excluding the start position (matching `set_unit_target`).
+pub fn build_unit_path(
+    grid: &GridResource,
+    defs: &BiomeDefinitions,
+    from_px: (f64, f64),
+    goal_px: (f64, f64),
+) -> Option<Vec<(f64, f64)>> {
+    let start_tile = pixel_to_tile(from_px.0, from_px.1);
+    let end_tile = pixel_to_tile(goal_px.0, goal_px.1);
+    let tile_center = tile_to_pixel(end_tile.0, end_tile.1);
+
+    let cells = find_path(grid, defs, start_tile, end_tile)?;
+    let funnel_wps = funnel_algorithm(&cells, from_px, tile_center);
+    let safe_wps = ensure_passable_waypoints(&funnel_wps, &cells, grid, defs);
+    let centered: Vec<(f64, f64)> = safe_wps
+        .iter()
+        .map(|&(wx, wy)| {
+            let (tx, ty) = pixel_to_tile(wx, wy);
+            tile_to_pixel(tx, ty)
+        })
+        .collect();
+    let clipped = avoid_corner_clipping(&centered, grid, defs);
+    if clipped.len() > 1 {
+        Some(clipped[1..].to_vec())
+    } else {
+        Some(clipped)
+    }
+}
+
 /// Post-processes a waypoint list with greedy line-of-sight simplification
 /// ("string pulling"). `ensure_passable_waypoints` falls back to dumping every
 /// individual A* path cell whenever a shortcut segment fails its safety check
@@ -1260,25 +1291,9 @@ mod tests {
         start: (u32, u32),
         end: (u32, u32),
     ) -> Option<Vec<(f64, f64)>> {
-        let cells = find_path(grid, defs, start, end)?;
         let start_px = tile_to_pixel(start.0, start.1);
         let end_px = tile_to_pixel(end.0, end.1);
-        let funnel_wps = funnel_algorithm(&cells, start_px, end_px);
-        let safe_wps = ensure_passable_waypoints(&funnel_wps, &cells, grid, defs);
-        let centered: Vec<(f64, f64)> = safe_wps
-            .iter()
-            .map(|&(wx, wy)| {
-                let (tx, ty) = pixel_to_tile(wx, wy);
-                tile_to_pixel(tx, ty)
-            })
-            .collect();
-        let clipped = avoid_corner_clipping(&centered, grid, defs);
-        let path_wps = if clipped.len() > 1 {
-            clipped[1..].to_vec()
-        } else {
-            clipped
-        };
-        Some(path_wps)
+        build_unit_path(grid, defs, start_px, end_px)
     }
 
     #[test]
