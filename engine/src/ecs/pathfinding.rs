@@ -685,6 +685,7 @@ mod tests {
             passable: true,
             speed_factor: 1.0,
             color: 0x7ec850,
+            generation: None,
         }])
     }
 
@@ -695,12 +696,14 @@ mod tests {
                 passable: true,
                 speed_factor: 1.0,
                 color: 0x7ec850,
+                generation: None,
             },
             BiomeDef {
                 name: "Wall".into(),
                 passable: false,
                 speed_factor: 0.0,
                 color: 0x000000,
+                generation: None,
             },
         ])
     }
@@ -1293,7 +1296,7 @@ mod tests {
         let defs = default_biome_definitions();
         let mut grid = grid_from_seed(42, 50, 50);
         let idx = (1usize) * 50 + 28;
-        grid.biome_ids[idx] = 2; // Water at (28,1)
+        grid.biome_ids[idx] = 1; // Water at (28,1)
 
         let from = tile_to_pixel(29, 0);
         let to = tile_to_pixel(26, 1);
@@ -1308,7 +1311,7 @@ mod tests {
     fn path_from_29_0_to_26_1_avoids_water_shortcut() {
         let defs = default_biome_definitions();
         let mut grid = grid_from_seed(42, 50, 50);
-        grid.biome_ids[1 * 50 + 28] = 2; // Water at (28,1) — live browser layout
+        grid.biome_ids[1 * 50 + 28] = 1; // Water at (28,1) — live browser layout
 
         let start = (29u32, 0u32);
         let end = (26u32, 1u32);

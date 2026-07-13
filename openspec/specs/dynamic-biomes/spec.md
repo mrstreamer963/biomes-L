@@ -37,9 +37,20 @@ TBD — управление произвольным набором опред�
 
 ### Requirement: Конфиг биомов
 
-Система SHALL предоставить единый файл `src/config/biomes.json` как источник истины для определений биомов и дефолтных параметров генерации. TypeScript импортирует JSON через `src/config/biomeConfig.ts` и передаёт определения в WASM при инициализации через `register_biome_definitions`. Rust читает тот же JSON через `include_str!` в `engine/src/ecs/biome_config.rs`.
+Система SHALL предоставить единый файл `src/config/biomes.json` как источник истины для:
+- определений биомов (`definitions`), каждое из которых включает свойства (name, passable, speed, color) и опциональные условия генерации (`generation`)
+- параметров шума (`generationParams`: seed, scale, octaves, persistence, lacunarity)
+
+Условия генерации задаются в том же объекте биома через поле `generation` с опциональными порогами (elevationLt, elevationGt, elevationGte, moistureGt). Порядок проверки правил совпадает с порядком биомов в массиве `definitions` (индекс 0 проверяется первым). Биом с пустым `generation: {}` срабатывает как fallback, когда до него дошла очередь.
+
+TypeScript импортирует JSON через `src/config/biomeConfig.ts` и передаёт определения в WASM при инициализации через `register_biome_definitions`. Rust читает тот же JSON через `include_str!` в `engine/src/ecs/biome_config.rs`.
 
 #### Scenario: Дефолтный конфиг
 
 - **WHEN** приложение стартует
-- **THEN** `biomes.json` содержит 7 биомов (Plains, Forest, Water, Mountain, Deep Water, Sand, High Mountain) с их текущими свойствами и цветами, и TS/Rust используют одинаковые данные из этого файла
+- **THEN** `biomes.json` содержит 7 биомов с их свойствами, цветами и условиями генерации, и TS/Rust используют одинаковые данные из этого файла
+
+#### Scenario: Добавление биома
+
+- **WHEN** в `biomes.json` добавляется одна запись в `definitions` с полем `generation`
+- **THEN** новый биом появляется на карте без изменения Rust-кода

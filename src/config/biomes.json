@@ -1,24 +1,18 @@
 {
   "definitions": [
-    { "name": "Plains", "passable": true, "speed": 1.0, "color": 8308816 },
-    { "name": "Forest", "passable": true, "speed": 0.6, "color": 2972199 },
-    { "name": "Water", "passable": false, "speed": 0.0, "color": 3900150 },
-    { "name": "Mountain", "passable": false, "speed": 0.0, "color": 9139029 },
-    { "name": "Deep Water", "passable": false, "speed": 0.0, "color": 1981023 },
-    { "name": "Sand", "passable": true, "speed": 0.9, "color": 15654280 },
-    { "name": "High Mountain", "passable": false, "speed": 0.0, "color": 16777215 }
+    { "name": "Deep Water", "passable": false, "speed": 0.0, "color": 1981023, "generation": { "elevationLt": 0.28 } },
+    { "name": "Water", "passable": false, "speed": 0.0, "color": 3900150, "generation": { "elevationLt": 0.30 } },
+    { "name": "Sand", "passable": true, "speed": 0.9, "color": 15654280, "generation": { "elevationLt": 0.34 } },
+    { "name": "High Mountain", "passable": false, "speed": 0.0, "color": 16777215, "generation": { "elevationGte": 0.72 } },
+    { "name": "Mountain", "passable": false, "speed": 0.0, "color": 9139029, "generation": { "elevationGt": 0.70 } },
+    { "name": "Forest", "passable": true, "speed": 0.6, "color": 2972199, "generation": { "moistureGt": 0.50 } },
+    { "name": "Plains", "passable": true, "speed": 1.0, "color": 8308816, "generation": {} }
   ],
   "generationParams": {
     "seed": 42,
     "scale": 8.0,
     "octaves": 4,
     "persistence": 0.5,
-    "lacunarity": 2.0,
-    "elevationLow": 0.30,
-    "elevationHigh": 0.70,
-    "moistureHigh": 0.50,
-    "elevationVeryLow": 0.28,
-    "elevationVeryHigh": 0.72,
-    "elevationSandMax": 0.34
+    "lacunarity": 2.0
   }
 }

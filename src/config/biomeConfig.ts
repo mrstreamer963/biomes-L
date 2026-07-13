@@ -1,10 +1,18 @@
 import biomes from "./biomes.json";
 
+export interface GenerationConditions {
+  elevationLt?: number;
+  elevationGt?: number;
+  elevationGte?: number;
+  moistureGt?: number;
+}
+
 export interface BiomeDefinition {
   name: string;
   passable: boolean;
   speed: number;
   color: number;
+  generation?: GenerationConditions;
 }
 
 export interface GenerationParams {
@@ -13,12 +21,6 @@ export interface GenerationParams {
   octaves?: number;
   persistence?: number;
   lacunarity?: number;
-  elevationLow?: number;
-  elevationHigh?: number;
-  moistureHigh?: number;
-  elevationVeryLow?: number;
-  elevationVeryHigh?: number;
-  elevationSandMax?: number;
 }
 
 export const DEFAULT_BIOME_DEFINITIONS: BiomeDefinition[] = biomes.definitions;

@@ -2,7 +2,7 @@ use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-use biome_config::{default_biome_definitions, default_generation_params};
+use biome_config::{default_biome_definitions, default_generation_params, resolve_biome_from_noise};
 
 pub mod grid_resource;
 pub mod biome_definitions;
@@ -43,18 +43,6 @@ pub struct GenerationParams {
     pub persistence: f64,
     #[serde(default = "default_lacunarity")]
     pub lacunarity: f64,
-    #[serde(default = "default_elevation_low")]
-    pub elevation_low: f64,
-    #[serde(default = "default_elevation_high")]
-    pub elevation_high: f64,
-    #[serde(default = "default_moisture_high")]
-    pub moisture_high: f64,
-    #[serde(default = "default_elevation_very_low")]
-    pub elevation_very_low: f64,
-    #[serde(default = "default_elevation_sand_max")]
-    pub elevation_sand_max: f64,
-    #[serde(default = "default_elevation_very_high")]
-    pub elevation_very_high: f64,
 }
 
 impl GenerationParams {
@@ -66,12 +54,6 @@ impl GenerationParams {
             octaves: defaults.octaves,
             persistence: defaults.persistence,
             lacunarity: defaults.lacunarity,
-            elevation_low: defaults.elevation_low,
-            elevation_high: defaults.elevation_high,
-            moisture_high: defaults.moisture_high,
-            elevation_very_low: defaults.elevation_very_low,
-            elevation_sand_max: defaults.elevation_sand_max,
-            elevation_very_high: defaults.elevation_very_high,
         }
     }
 }
@@ -88,48 +70,12 @@ fn default_persistence() -> f64 {
 fn default_lacunarity() -> f64 {
     default_generation_params().lacunarity
 }
-fn default_elevation_low() -> f64 {
-    default_generation_params().elevation_low
-}
-fn default_elevation_high() -> f64 {
-    default_generation_params().elevation_high
-}
-fn default_moisture_high() -> f64 {
-    default_generation_params().moisture_high
-}
-fn default_elevation_very_low() -> f64 {
-    default_generation_params().elevation_very_low
-}
-fn default_elevation_sand_max() -> f64 {
-    default_generation_params().elevation_sand_max
-}
-fn default_elevation_very_high() -> f64 {
-    default_generation_params().elevation_very_high
-}
 
 static DEFAULT_BIOME_DEFS: LazyLock<BiomeDefinitions> =
     LazyLock::new(default_biome_definitions);
 
-fn biome_id(name: &str) -> u16 {
-    DEFAULT_BIOME_DEFS.id_by_name(name).unwrap_or(0)
-}
-
-pub fn biome_from_noise(elevation: f64, moisture: f64, params: &GenerationParams) -> u16 {
-    if elevation < params.elevation_very_low {
-        biome_id("Deep Water")
-    } else if elevation < params.elevation_low {
-        biome_id("Water")
-    } else if elevation < params.elevation_sand_max {
-        biome_id("Sand")
-    } else if elevation >= params.elevation_very_high {
-        biome_id("High Mountain")
-    } else if elevation > params.elevation_high {
-        biome_id("Mountain")
-    } else if moisture > params.moisture_high {
-        biome_id("Forest")
-    } else {
-        biome_id("Plains")
-    }
+pub fn biome_from_noise(elevation: f64, moisture: f64) -> u16 {
+    resolve_biome_from_noise(elevation, moisture, &DEFAULT_BIOME_DEFS)
 }
 
 /// Генерирует сетку биомов заданного размера на основе шума и параметров генерации.
@@ -162,7 +108,7 @@ pub fn generate_grid_biomes(seed: u64, width: u32, height: u32) -> Vec<u16> {
                 params.scale,
             ) + 1.0) / 2.0;
 
-            biomes.push(biome_from_noise(elevation, moisture, &params));
+            biomes.push(biome_from_noise(elevation, moisture));
         }
     }
     biomes
@@ -198,9 +144,11 @@ mod tests {
 
     #[test]
     fn biome_ids_in_valid_range() {
+        let defs = default_biome_definitions();
+        let max_id = (defs.definitions.len() - 1) as u16;
         let biomes = generate_grid_biomes(7, 10, 10);
         for id in &biomes {
-            assert!(*id <= 6, "biome_id {} out of expected range", id);
+            assert!(*id <= max_id, "biome_id {} out of expected range", id);
         }
     }
 

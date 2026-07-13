@@ -3,6 +3,19 @@ use std::collections::HashMap;
 use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerationConditions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevation_lt: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevation_gt: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevation_gte: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moisture_gt: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BiomeDef {
     pub name: String,
@@ -10,6 +23,8 @@ pub struct BiomeDef {
     #[serde(rename = "speed")]
     pub speed_factor: f32,
     pub color: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<GenerationConditions>,
 }
 
 #[derive(Debug, Clone, Resource)]
@@ -68,13 +83,13 @@ mod tests {
     #[test]
     fn get_name_returns_some_for_valid_id() {
         let defs = default_biome_definitions();
-        assert_eq!(defs.get_name(0), Some("Plains"));
-        assert_eq!(defs.get_name(1), Some("Forest"));
-        assert_eq!(defs.get_name(2), Some("Water"));
-        assert_eq!(defs.get_name(3), Some("Mountain"));
-        assert_eq!(defs.get_name(4), Some("Deep Water"));
-        assert_eq!(defs.get_name(5), Some("Sand"));
-        assert_eq!(defs.get_name(6), Some("High Mountain"));
+        assert_eq!(defs.get_name(0), Some("Deep Water"));
+        assert_eq!(defs.get_name(1), Some("Water"));
+        assert_eq!(defs.get_name(2), Some("Sand"));
+        assert_eq!(defs.get_name(3), Some("High Mountain"));
+        assert_eq!(defs.get_name(4), Some("Mountain"));
+        assert_eq!(defs.get_name(5), Some("Forest"));
+        assert_eq!(defs.get_name(6), Some("Plains"));
     }
 
     #[test]
@@ -86,13 +101,13 @@ mod tests {
     #[test]
     fn is_passable_works() {
         let defs = default_biome_definitions();
-        assert!(defs.is_passable(0));
-        assert!(defs.is_passable(1));
-        assert!(!defs.is_passable(2));
+        assert!(!defs.is_passable(0));
+        assert!(!defs.is_passable(1));
+        assert!(defs.is_passable(2));
         assert!(!defs.is_passable(3));
         assert!(!defs.is_passable(4));
         assert!(defs.is_passable(5));
-        assert!(!defs.is_passable(6));
+        assert!(defs.is_passable(6));
     }
 
     #[test]
@@ -104,13 +119,13 @@ mod tests {
     #[test]
     fn speed_factor_works() {
         let defs = default_biome_definitions();
-        assert_eq!(defs.speed_factor(0), 1.0);
-        assert_eq!(defs.speed_factor(1), 0.6);
-        assert_eq!(defs.speed_factor(2), 0.0);
+        assert_eq!(defs.speed_factor(0), 0.0);
+        assert_eq!(defs.speed_factor(1), 0.0);
+        assert_eq!(defs.speed_factor(2), 0.9);
         assert_eq!(defs.speed_factor(3), 0.0);
         assert_eq!(defs.speed_factor(4), 0.0);
-        assert_eq!(defs.speed_factor(5), 0.9);
-        assert_eq!(defs.speed_factor(6), 0.0);
+        assert_eq!(defs.speed_factor(5), 0.6);
+        assert_eq!(defs.speed_factor(6), 1.0);
     }
 
     #[test]
@@ -122,13 +137,13 @@ mod tests {
     #[test]
     fn get_color_works() {
         let defs = default_biome_definitions();
-        assert_eq!(defs.get_color(0), 0x7ec850);
-        assert_eq!(defs.get_color(1), 0x2d5a27);
-        assert_eq!(defs.get_color(2), 0x3b82f6);
-        assert_eq!(defs.get_color(3), 0x8b7355);
-        assert_eq!(defs.get_color(4), 0x1e3a5f);
-        assert_eq!(defs.get_color(5), 0xeedd88);
-        assert_eq!(defs.get_color(6), 0xffffff);
+        assert_eq!(defs.get_color(0), 0x1e3a5f);
+        assert_eq!(defs.get_color(1), 0x3b82f6);
+        assert_eq!(defs.get_color(2), 0xeedd88);
+        assert_eq!(defs.get_color(3), 0xffffff);
+        assert_eq!(defs.get_color(4), 0x8b7355);
+        assert_eq!(defs.get_color(5), 0x2d5a27);
+        assert_eq!(defs.get_color(6), 0x7ec850);
     }
 
     #[test]

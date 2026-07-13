@@ -72,7 +72,7 @@ pub fn create_grid(params: JsValue, width: u32, height: u32) -> u32 {
                 params.octaves, params.lacunarity, params.persistence,
                 params.scale,
             ) + 1.0) / 2.0;
-            biome_ids.push(biome_from_noise(elevation, moisture, &params));
+            biome_ids.push(biome_from_noise(elevation, moisture));
         }
     }
 
