@@ -82,6 +82,9 @@ fn default_elevation_very_low() -> f64 { 0.28 }
 fn default_elevation_sand_max() -> f64 { 0.34 }
 fn default_elevation_very_high() -> f64 { 0.72 }
 
+/// Маппинг шума в городские зоны (ID 0–6):
+/// elevation = плотность застройки, moisture = запутанность района.
+/// 0 Улица, 1 Переулок, 2 Канал, 3 Здание, 4 Гавань, 5 Стройплощадка, 6 Небоскрёб.
 pub fn biome_from_noise(elevation: f64, moisture: f64, params: &GenerationParams) -> u16 {
     if elevation < params.elevation_very_low {
         4
@@ -173,25 +176,25 @@ mod tests {
     }
 
     #[test]
-    fn biome_sand_is_generated() {
-        // Sand должна появляться как прибрежная полоса между Water и Plains
+    fn biome_construction_is_generated() {
+        // Стройплощадка — узкая полоса между Каналом и Улицей
         let biomes = generate_grid_biomes(42, 256, 256);
-        let has_sand = biomes.iter().any(|&id| id == 5);
-        assert!(has_sand, "Sand (ID 5) должна быть сгенерирована на карте 256x256");
+        let has_construction = biomes.iter().any(|&id| id == 5);
+        assert!(has_construction, "Стройплощадка (ID 5) должна быть сгенерирована на карте 256x256");
     }
 
     #[test]
-    fn biome_deep_water_is_generated() {
+    fn biome_harbor_is_generated() {
         let biomes = generate_grid_biomes(42, 256, 256);
-        let has_dw = biomes.iter().any(|&id| id == 4);
-        assert!(has_dw, "Deep Water (ID 4) должна быть сгенерирована на карте 256x256");
+        let has_harbor = biomes.iter().any(|&id| id == 4);
+        assert!(has_harbor, "Гавань (ID 4) должна быть сгенерирована на карте 256x256");
     }
 
     #[test]
-    fn biome_high_mountain_is_generated() {
+    fn biome_skyscraper_is_generated() {
         let biomes = generate_grid_biomes(42, 256, 256);
-        let has_hm = biomes.iter().any(|&id| id == 6);
-        assert!(has_hm, "High Mountain (ID 6) должна быть сгенерирована на карте 256x256");
+        let has_skyscraper = biomes.iter().any(|&id| id == 6);
+        assert!(has_skyscraper, "Небоскрёб (ID 6) должен быть сгенерирован на карте 256x256");
     }
 
     }

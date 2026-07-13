@@ -680,26 +680,26 @@ mod tests {
 
     fn passable_defs() -> BiomeDefinitions {
         BiomeDefinitions::new(vec![BiomeDef {
-            name: "Plains".into(),
+            name: "Улица".into(),
             passable: true,
             speed_factor: 1.0,
-            color: 0x7ec850,
+            color: 0x4a4a4a,
         }])
     }
 
     fn impassable_defs() -> BiomeDefinitions {
         BiomeDefinitions::new(vec![
             BiomeDef {
-                name: "Plains".into(),
+                name: "Улица".into(),
                 passable: true,
                 speed_factor: 1.0,
-                color: 0x7ec850,
+                color: 0x4a4a4a,
             },
             BiomeDef {
-                name: "Wall".into(),
+                name: "Здание".into(),
                 passable: false,
                 speed_factor: 0.0,
-                color: 0x000000,
+                color: 0x6b6b6b,
             },
         ])
     }
@@ -1269,13 +1269,13 @@ mod tests {
 
     fn game_biome_defs() -> BiomeDefinitions {
         BiomeDefinitions::new(vec![
-            BiomeDef { name: "Plains".into(), passable: true, speed_factor: 1.0, color: 0x7ec850 },
-            BiomeDef { name: "Forest".into(), passable: true, speed_factor: 0.6, color: 0x2d5a27 },
-            BiomeDef { name: "Water".into(), passable: false, speed_factor: 0.0, color: 0x3b82f6 },
-            BiomeDef { name: "Mountain".into(), passable: false, speed_factor: 0.0, color: 0x8b7355 },
-            BiomeDef { name: "Deep Water".into(), passable: false, speed_factor: 0.0, color: 0x1e3a5f },
-            BiomeDef { name: "Sand".into(), passable: true, speed_factor: 0.9, color: 0xeedd88 },
-            BiomeDef { name: "High Mountain".into(), passable: false, speed_factor: 0.0, color: 0xffffff },
+            BiomeDef { name: "Улица".into(), passable: true, speed_factor: 1.0, color: 0x4a4a4a },
+            BiomeDef { name: "Переулок".into(), passable: true, speed_factor: 0.6, color: 0x2a2a35 },
+            BiomeDef { name: "Канал".into(), passable: false, speed_factor: 0.0, color: 0x2b5f8a },
+            BiomeDef { name: "Здание".into(), passable: false, speed_factor: 0.0, color: 0x6b6b6b },
+            BiomeDef { name: "Гавань".into(), passable: false, speed_factor: 0.0, color: 0x1a3a5c },
+            BiomeDef { name: "Стройплощадка".into(), passable: true, speed_factor: 0.9, color: 0xc4a35a },
+            BiomeDef { name: "Небоскрёб".into(), passable: false, speed_factor: 0.0, color: 0x1e1e28 },
         ])
     }
 
@@ -1304,7 +1304,7 @@ mod tests {
         let defs = game_biome_defs();
         let mut grid = grid_from_seed(42, 50, 50);
         let idx = (1usize) * 50 + 28;
-        grid.biome_ids[idx] = 2; // Water at (28,1)
+        grid.biome_ids[idx] = 2; // Канал at (28,1)
 
         let from = tile_to_pixel(29, 0);
         let to = tile_to_pixel(26, 1);
@@ -1319,7 +1319,7 @@ mod tests {
     fn path_from_29_0_to_26_1_avoids_water_shortcut() {
         let defs = game_biome_defs();
         let mut grid = grid_from_seed(42, 50, 50);
-        grid.biome_ids[1 * 50 + 28] = 2; // Water at (28,1) — live browser layout
+        grid.biome_ids[1 * 50 + 28] = 2; // Канал at (28,1) — live browser layout
 
         let start = (29u32, 0u32);
         let end = (26u32, 1u32);

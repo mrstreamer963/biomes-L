@@ -33,12 +33,13 @@ export const DEFAULT_GENERATION_PARAMS: GenerationParams = {
   elevationSandMax: 0.34,
 };
 
+// Городские зоны (ID 0–6). Генерация: elevation = плотность застройки, moisture = запутанность района.
 export const DEFAULT_BIOME_DEFINITIONS: BiomeDefinition[] = [
-  { name: "Plains", passable: true, speed: 1.0, color: 0x7ec850 },
-  { name: "Forest", passable: true, speed: 0.6, color: 0x2d5a27 },
-  { name: "Water", passable: false, speed: 0.0, color: 0x3b82f6 },
-  { name: "Mountain", passable: false, speed: 0.0, color: 0x8b7355 },
-  { name: "Deep Water", passable: false, speed: 0.0, color: 0x1e3a5f },
-  { name: "Sand", passable: true, speed: 0.9, color: 0xeedd88 },
-  { name: "High Mountain", passable: false, speed: 0.0, color: 0xffffff },
+  { name: "Улица", passable: true, speed: 1.0, color: 0x4a4a4a },
+  { name: "Переулок", passable: true, speed: 0.6, color: 0x2a2a35 },
+  { name: "Канал", passable: false, speed: 0.0, color: 0x2b5f8a },
+  { name: "Здание", passable: false, speed: 0.0, color: 0x6b6b6b },
+  { name: "Гавань", passable: false, speed: 0.0, color: 0x1a3a5c },
+  { name: "Стройплощадка", passable: true, speed: 0.9, color: 0xc4a35a },
+  { name: "Небоскрёб", passable: false, speed: 0.0, color: 0x1e1e28 },
 ];

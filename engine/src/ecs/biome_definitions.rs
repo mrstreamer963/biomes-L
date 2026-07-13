@@ -53,46 +53,46 @@ mod tests {
     fn test_defs() -> BiomeDefinitions {
         BiomeDefinitions::new(vec![
             BiomeDef {
-                name: "Plains".into(),
+                name: "Улица".into(),
                 passable: true,
                 speed_factor: 1.0,
-                color: 0x7ec850,
+                color: 0x4a4a4a,
             },
             BiomeDef {
-                name: "Forest".into(),
+                name: "Переулок".into(),
                 passable: true,
                 speed_factor: 0.6,
-                color: 0x2d5a27,
+                color: 0x2a2a35,
             },
             BiomeDef {
-                name: "Water".into(),
+                name: "Канал".into(),
                 passable: false,
                 speed_factor: 0.0,
-                color: 0x3b82f6,
+                color: 0x2b5f8a,
             },
             BiomeDef {
-                name: "Mountain".into(),
+                name: "Здание".into(),
                 passable: false,
                 speed_factor: 0.0,
-                color: 0x8b7355,
+                color: 0x6b6b6b,
             },
             BiomeDef {
-                name: "Deep Water".into(),
+                name: "Гавань".into(),
                 passable: false,
                 speed_factor: 0.0,
-                color: 0x1e3a5f,
+                color: 0x1a3a5c,
             },
             BiomeDef {
-                name: "Sand".into(),
+                name: "Стройплощадка".into(),
                 passable: true,
                 speed_factor: 0.9,
-                color: 0xeedd88,
+                color: 0xc4a35a,
             },
             BiomeDef {
-                name: "High Mountain".into(),
+                name: "Небоскрёб".into(),
                 passable: false,
                 speed_factor: 0.0,
-                color: 0xffffff,
+                color: 0x1e1e28,
             },
         ])
     }
@@ -100,13 +100,13 @@ mod tests {
     #[test]
     fn get_name_returns_some_for_valid_id() {
         let defs = test_defs();
-        assert_eq!(defs.get_name(0), Some("Plains"));
-        assert_eq!(defs.get_name(1), Some("Forest"));
-        assert_eq!(defs.get_name(2), Some("Water"));
-        assert_eq!(defs.get_name(3), Some("Mountain"));
-        assert_eq!(defs.get_name(4), Some("Deep Water"));
-        assert_eq!(defs.get_name(5), Some("Sand"));
-        assert_eq!(defs.get_name(6), Some("High Mountain"));
+        assert_eq!(defs.get_name(0), Some("Улица"));
+        assert_eq!(defs.get_name(1), Some("Переулок"));
+        assert_eq!(defs.get_name(2), Some("Канал"));
+        assert_eq!(defs.get_name(3), Some("Здание"));
+        assert_eq!(defs.get_name(4), Some("Гавань"));
+        assert_eq!(defs.get_name(5), Some("Стройплощадка"));
+        assert_eq!(defs.get_name(6), Some("Небоскрёб"));
     }
 
     #[test]
@@ -154,13 +154,13 @@ mod tests {
     #[test]
     fn get_color_works() {
         let defs = test_defs();
-        assert_eq!(defs.get_color(0), 0x7ec850);
-        assert_eq!(defs.get_color(1), 0x2d5a27);
-        assert_eq!(defs.get_color(2), 0x3b82f6);
-        assert_eq!(defs.get_color(3), 0x8b7355);
-        assert_eq!(defs.get_color(4), 0x1e3a5f);
-        assert_eq!(defs.get_color(5), 0xeedd88);
-        assert_eq!(defs.get_color(6), 0xffffff);
+        assert_eq!(defs.get_color(0), 0x4a4a4a);
+        assert_eq!(defs.get_color(1), 0x2a2a35);
+        assert_eq!(defs.get_color(2), 0x2b5f8a);
+        assert_eq!(defs.get_color(3), 0x6b6b6b);
+        assert_eq!(defs.get_color(4), 0x1a3a5c);
+        assert_eq!(defs.get_color(5), 0xc4a35a);
+        assert_eq!(defs.get_color(6), 0x1e1e28);
     }
 
     #[test]
