@@ -10,7 +10,13 @@ fn generate_perm(seed: i32) -> [u8; 512] {
         state = (state ^ (state >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
         state = (state ^ (state >> 27)).wrapping_mul(0x94D049BB133111EB);
         state ^= state >> 31;
-        let j = (state as usize) % (i + 1);
+        // Truncate to u32 before narrowing: `state as usize` truncates to the
+        // host's pointer width (32 bits on wasm32, 64 bits natively), so the
+        // same seed produced a different permutation table — and therefore a
+        // different biome map — depending on target. Forcing u32 here makes
+        // the shuffle identical everywhere, matching what the deployed wasm
+        // build (32-bit usize) already produces.
+        let j = (state as u32 as usize) % (i + 1);
         p.swap(i, j);
     }
 

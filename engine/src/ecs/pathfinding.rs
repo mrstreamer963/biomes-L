@@ -562,10 +562,22 @@ pub fn ensure_passable_waypoints(
             continue;
         }
 
-        // Check if direct segment is safe
-        let safe = line_is_safe(from, to, grid, defs);
-
         let to_cell = pixel_to_tile(to.0, to.1);
+        let to_px = tile_to_pixel(to_cell.0, to_cell.1);
+
+        // Check whether the segment we would actually store is safe. The raw
+        // funnel waypoint `to` is a portal vertex that can sit exactly on a
+        // tile boundary/corner, narrowly avoiding a wall; but the point we
+        // store is `to_px`, `to` rounded to its tile's centre, which can be a
+        // measurably different position. Checking `line_is_safe(from, to)`
+        // and then pushing `to_px` unchecked let a segment that clips a wall
+        // corner slip through as "safe" — the live repro is a unit at
+        // (361,273) targeting (354,285) on a seed-42 512x512 map: the raw
+        // portal vertex (11808,8768) narrowly avoids the mountain at
+        // (365,274), but its snapped tile centre (11824,8784) clips it,
+        // leaving the unit stuck recalculating an identical bad path forever.
+        let safe = line_is_safe(from, to_px, grid, defs);
+
         // Nearest A* cell to `to`, searched forward from our current position
         // only. This always resolves (cells is non-empty here) and can never
         // move `from_idx` backwards, unlike an exact-match lookup that falls
@@ -581,7 +593,6 @@ pub fn ensure_passable_waypoints(
 
         if safe {
             // Direct segment is safe — use the target waypoint (converted to cell centre)
-            let to_px = tile_to_pixel(to_cell.0, to_cell.1);
             // Avoid adding duplicate if same as last waypoint
             if result.last() != Some(&to_px) {
                 result.push(to_px);
@@ -1389,5 +1400,86 @@ mod tests {
             "diagonal segment {:?}→{:?} clips the (27,27) wall corner and must not be marked safe",
             from, to
         );
+    }
+
+    #[test]
+    fn ensure_passable_waypoints_checks_the_snapped_point_not_the_raw_funnel_point() {
+        // Live repro: unit at tile (361,273) targeting (354,285) on the real
+        // seed-42 512x512 map, next to a mountain massif. Translated here into
+        // local coordinates (offset -345,-265, plus a 3-tile forest margin) so
+        // the grid is small: start (16,8)->local(19,11), end (9,20)->local(12,23).
+        //
+        // `funnel_algorithm` produces a raw first waypoint sitting exactly on a
+        // tile *corner* that narrowly avoids the mountain — `line_is_safe(from,
+        // raw)` is true. `ensure_passable_waypoints` used to accept that and then
+        // store the corner's tile *centre* instead, unchecked; the centre is far
+        // enough into the tile that the straight line from `from` to it clips
+        // the mountain. The unit's first movement step is then blocked, it
+        // recalculates, gets the identical bad path, and after 3 attempts its
+        // path/target are cleared — it freezes in place forever.
+        let defs = default_biome_definitions();
+
+        const PAD: u32 = 3;
+        let local_rows: [[u16; 31]; 31] = [
+            [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6],
+            [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6],
+            [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,3,3,3,3,3,4,4,4,5,5,5,5,5,5,5,5,4,4,4,4,5,5,5,5,5,5,5,5],
+            [4,4,3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5,5,4,4,4,4,4,5,5,5,5,5,5,5],
+            [4,4,3,3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,4,4,4,3,3,4,4,5,5,5,5,5,5],
+            [3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,5,5,4,4,4,3,3,4,4,4,5,5,5,5,5],
+            [3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,5,5,5,5,5],
+            [3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,5,4,4,4,4,4,4,4,5,5,5,5,5],
+            [4,4,4,4,4,3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5,5,4,5,5,5,5,5,5,5,5],
+            [4,4,4,4,4,4,4,4,4,3,3,3,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,5,5,5,5,5,5,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [5,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [5,5,5,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+            [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        ];
+        let dim = local_rows.len() as u32 + PAD * 2;
+        let mut biome_ids = vec![5u16; (dim * dim) as usize]; // Forest margin
+        for (r, row_vals) in local_rows.iter().enumerate() {
+            for (c, &v) in row_vals.iter().enumerate() {
+                let idx = (r as u32 + PAD) as usize * dim as usize + (c as u32 + PAD) as usize;
+                biome_ids[idx] = v;
+            }
+        }
+        let grid = GridResource::new(dim, dim, biome_ids, vec![0; (dim * dim) as usize]);
+
+        let start = (16 + PAD, 8 + PAD);
+        let end = (9 + PAD, 20 + PAD);
+
+        let path_wps = full_pipeline(&grid, &defs, start, end)
+            .expect("a path must exist around the mountain massif");
+
+        let start_px = tile_to_pixel(start.0, start.1);
+        let end_px = tile_to_pixel(end.0, end.1);
+        let mut chain = vec![start_px];
+        chain.extend(path_wps.iter().copied());
+        chain.push(end_px);
+        for pair in chain.windows(2) {
+            assert!(
+                line_is_safe(pair[0], pair[1], &grid, &defs),
+                "movement segment {:?} -> {:?} clips the mountain massif and would freeze the unit",
+                pair[0], pair[1]
+            );
+        }
     }
 }
