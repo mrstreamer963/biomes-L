@@ -73,15 +73,23 @@ export function tacticalColorFor(color: number): number {
 
 export class TacticalRenderer {
   readonly container = new Container();
-  private zoneLayer = new Graphics();
+  private zoneFillLayer = new Graphics();
+  private zoneGridLayer = new Graphics();
   private markerLayer = new Graphics();
 
   private units: UnitData[] = [];
   private selectedUnitId: number | null = null;
   private viewScale = 1;
 
+  private mapW = 0;
+  private mapH = 0;
+  private zonesX = 0;
+  private zonesY = 0;
+  private zoneSize = 0;
+
   constructor() {
-    this.container.addChild(this.zoneLayer);
+    this.container.addChild(this.zoneFillLayer);
+    this.container.addChild(this.zoneGridLayer);
     this.container.addChild(this.markerLayer);
   }
 
@@ -89,9 +97,12 @@ export class TacticalRenderer {
     biomeIds: Uint16Array,
     defs: BiomeDefinition[],
     width: number,
-    height: number
+    height: number,
+    scale: number = this.viewScale
   ): void {
-    const g = this.zoneLayer;
+    this.viewScale = scale;
+
+    const g = this.zoneFillLayer;
     g.clear();
 
     const mapW = width * TILE_SIZE;
@@ -112,6 +123,27 @@ export class TacticalRenderer {
       }
     }
 
+    this.mapW = mapW;
+    this.mapH = mapH;
+    this.zonesX = zonesX;
+    this.zonesY = zonesY;
+    this.zoneSize = zoneSize;
+    this.redrawGrid();
+  }
+
+  // Zone grid lines are kept 1 *screen* pixel wide at any zoom level.
+  // Stroking them at a fixed width in world units instead (as the fills
+  // above are) would let sub-pixel line widths get rounded inconsistently
+  // by the GPU once the world transform shrinks them below a device pixel,
+  // making some lines vanish while neighbors survive — an uneven, "broken"
+  // looking grid instead of a clean one.
+  private redrawGrid(): void {
+    const g = this.zoneGridLayer;
+    g.clear();
+    if (this.zonesX === 0 && this.zonesY === 0) return;
+
+    const { mapW, mapH, zonesX, zonesY, zoneSize } = this;
+
     for (let zx = 0; zx <= zonesX; zx++) {
       const px = Math.min(zx * zoneSize, mapW);
       g.moveTo(px, 0).lineTo(px, mapH);
@@ -120,7 +152,9 @@ export class TacticalRenderer {
       const py = Math.min(zy * zoneSize, mapH);
       g.moveTo(0, py).lineTo(mapW, py);
     }
-    g.stroke({ width: 1, color: GRID_LINE_COLOR, alpha: GRID_LINE_ALPHA });
+
+    const screenPixelInWorldUnits = 1 / Math.max(this.viewScale, 0.001);
+    g.stroke({ width: screenPixelInWorldUnits, color: GRID_LINE_COLOR, alpha: GRID_LINE_ALPHA });
   }
 
   updateUnits(units: UnitData[], selectedUnitId: number | null): void {
@@ -131,6 +165,7 @@ export class TacticalRenderer {
 
   setViewScale(scale: number): void {
     this.viewScale = scale;
+    this.redrawGrid();
     this.drawMarkers();
   }
 
@@ -162,7 +197,8 @@ export class TacticalRenderer {
   }
 
   destroy(): void {
-    this.zoneLayer.destroy();
+    this.zoneFillLayer.destroy();
+    this.zoneGridLayer.destroy();
     this.markerLayer.destroy();
     this.container.destroy({ children: true });
   }

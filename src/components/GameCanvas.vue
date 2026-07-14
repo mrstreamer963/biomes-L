@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from "vue";
 import { useGridSnapshot } from "../composables/useGridSnapshot";
 import { useViewMode } from "../composables/useViewMode";
-import { createTileMap, TILE_SIZE } from "../game/MapRenderer";
+import { createTileMap, updateGrid, TILE_SIZE } from "../game/MapRenderer";
 import { MapCamera } from "../game/MapCamera";
 import { UnitManager } from "../game/UnitManager";
 import { TacticalRenderer, MARKER_SCREEN_PX } from "../game/TacticalRenderer";
@@ -26,6 +26,7 @@ onMounted(async () => {
   await app.init({
     resizeTo: container.value!,
     background: 0x1a1a2e,
+    roundPixels: true,
   });
   container.value!.appendChild(app.canvas as HTMLCanvasElement);
 
@@ -68,7 +69,7 @@ onMounted(async () => {
 
       detailedLayer.removeChildren();
       const tileMap = createTileMap(data, biomeDefinitions.value, width.value, height.value);
-      detailedLayer.addChild(tileMap);
+      detailedLayer.addChild(tileMap.container);
 
       unitManager = new UnitManager();
       detailedLayer.addChild(unitManager.container);
@@ -76,17 +77,19 @@ onMounted(async () => {
       tacticalRenderer?.destroy();
       tacticalLayer.removeChildren();
       tacticalRenderer = new TacticalRenderer();
-      tacticalRenderer.buildMap(data, biomeDefinitions.value, width.value, height.value);
+      tacticalRenderer.buildMap(data, biomeDefinitions.value, width.value, height.value, camera?.getScale() ?? 1);
       tacticalLayer.addChild(tacticalRenderer.container);
+
+      const handleZoomChange = (scale: number) => {
+        setZoomScale(scale);
+        tacticalRenderer?.setViewScale(scale);
+        updateGrid(tileMap, scale);
+      };
 
       camera?.destroy();
       camera = new MapCamera(worldContainer, canvas, { minZoom: 0.1 });
       camera.onClick(handleClick);
-
-      camera.onZoomChange((scale) => {
-        setZoomScale(scale);
-        tacticalRenderer?.setViewScale(scale);
-      });
+      camera.onZoomChange(handleZoomChange);
 
       camera.onPointerMove((sx, sy) => {
         if (!camera) return;
@@ -103,11 +106,18 @@ onMounted(async () => {
         hoveredCell.value = null;
       });
 
-      setZoomScale(camera.getScale());
-      tacticalRenderer.setViewScale(camera.getScale());
+      handleZoomChange(camera.getScale());
       if (units.value) {
         tacticalRenderer.updateUnits(units.value, selectedUnitId.value);
       }
+
+      // The very first geometry upload for a freshly built grid sometimes
+      // doesn't render correctly until *something* forces another pass
+      // (e.g. panning) — running the same zoom-change path once more next
+      // frame makes the grid correct from the start, no interaction needed.
+      requestAnimationFrame(() => {
+        if (camera) handleZoomChange(camera.getScale());
+      });
     }
   );
 
