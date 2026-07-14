@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useGridSnapshot } from "../composables/useGridSnapshot";
 
-const { width, height, biomeDefinitions, biomeCounts, status, error, units, toggleDebug, hoveredCell } = useGridSnapshot();
+const { width, height, biomeDefinitions, biomeCounts, status, error, units, toggleDebug, hoveredCell, speed, paused, setSpeed, togglePause } = useGridSnapshot();
 
 const debugOn = computed(() => units.value?.some((u) => u.debug) ?? false);
 
@@ -49,6 +49,31 @@ const colorToHex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
           <span class="biome-count">{{ row.count }}</span>
         </li>
       </ul>
+    </div>
+
+    <div class="field">
+      <label>Speed</label>
+      <div class="speed-controls">
+        <button
+          v-for="s in [1, 5, 10]"
+          :key="s"
+          type="button"
+          class="speed-btn"
+          :class="{ active: speed === s && !paused }"
+          @click="setSpeed(s)"
+        >
+          x{{ s }}
+        </button>
+        <button
+          type="button"
+          class="pause-btn"
+          :class="{ active: paused }"
+          @click="togglePause()"
+        >
+          {{ paused ? "▶" : "⏸" }}
+        </button>
+      </div>
+      <div class="hotkey-hint">1 / 2 / 3 — speed · Space — pause</div>
     </div>
 
     <div class="field">
@@ -187,5 +212,46 @@ label {
   width: 1rem;
   height: 1rem;
   cursor: pointer;
+}
+
+.speed-controls {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.speed-btn,
+.pause-btn {
+  font-family: sans-serif;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f9f9f9;
+  color: #333;
+  cursor: pointer;
+}
+
+.speed-btn:hover,
+.pause-btn:hover {
+  background: #eee;
+}
+
+.speed-btn.active,
+.pause-btn.active {
+  background: #4a90d9;
+  border-color: #3a7bc0;
+  color: #fff;
+}
+
+.pause-btn {
+  margin-left: auto;
+  min-width: 2.5rem;
+  text-align: center;
+}
+
+.hotkey-hint {
+  font-family: sans-serif;
+  font-size: 0.75rem;
+  color: #999;
 }
 </style>

@@ -110,7 +110,9 @@ pub fn movement_system(
 
         status.speed_multiplier = speed_factor;
 
-        let step = speed.0 * speed_factor * dt;
+        // Clamp to the remaining distance so a large dt (e.g. fast-forward speed)
+        // can't overshoot the current waypoint and step through/past obstacles.
+        let step = (speed.0 * speed_factor * dt).min(dist);
         let nx = pos.x + (dx / dist) * step;
         let ny = pos.y + (dy / dist) * step;
 

@@ -16,10 +16,14 @@ export interface GridSnapshotState {
   selectedUnitId: Ref<number | null>;
   biomeCounts: ComputedRef<BiomeCounts>;
   hoveredCell: Ref<{ col: number; row: number } | null>;
+  speed: Ref<number>;
+  paused: Ref<boolean>;
   selectUnit: (unitId: number) => void;
   clearSelection: () => void;
   sendMoveCommand: (unitId: number, x: number, y: number) => void;
   toggleDebug: () => void;
+  setSpeed: (speed: number) => void;
+  togglePause: () => void;
 }
 
 let instance: GridSnapshotState | null = null;
@@ -36,6 +40,8 @@ export function createGridSnapshot(): GridSnapshotState {
   const units = shallowRef<UnitData[]>([]);
   const selectedUnitId = ref<number | null>(null);
   const hoveredCell = ref<{ col: number; row: number } | null>(null);
+  const speed = ref<number>(1);
+  const paused = ref<boolean>(false);
 
   let bridge: ReturnType<typeof createWasmBridge> | null = null;
   let rafId: number | null = null;
@@ -60,7 +66,9 @@ export function createGridSnapshot(): GridSnapshotState {
 
       if (lastTime !== null) {
         const dt = Math.min((time - lastTime) / 1000, 0.05);
-        bridge.postMessage({ type: "tick", dt });
+        if (!paused.value) {
+          bridge.postMessage({ type: "tick", dt: dt * speed.value });
+        }
       }
 
       lastTime = time;
@@ -97,7 +105,38 @@ export function createGridSnapshot(): GridSnapshotState {
     }
   }
 
+  function setSpeed(newSpeed: number) {
+    speed.value = newSpeed;
+  }
+
+  function togglePause() {
+    paused.value = !paused.value;
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+
+    switch (e.code) {
+      case "Digit1":
+        setSpeed(1);
+        break;
+      case "Digit2":
+        setSpeed(5);
+        break;
+      case "Digit3":
+        setSpeed(10);
+        break;
+      case "Space":
+        e.preventDefault();
+        togglePause();
+        break;
+    }
+  }
+
   onMounted(() => {
+    window.addEventListener("keydown", handleKeydown);
+
     bridge = createWasmBridge();
 
     const cleanup = bridge.onMessage((msg) => {
@@ -125,6 +164,7 @@ export function createGridSnapshot(): GridSnapshotState {
     });
 
     onUnmounted(() => {
+      window.removeEventListener("keydown", handleKeydown);
       stopGameLoop();
       cleanup();
       bridge?.terminate();
@@ -133,8 +173,8 @@ export function createGridSnapshot(): GridSnapshotState {
 
   instance = {
     width, height, biomeIds, biomeDefinitions, biomeCounts, status, error,
-    units, selectedUnitId, hoveredCell,
-    selectUnit, clearSelection, sendMoveCommand, toggleDebug,
+    units, selectedUnitId, hoveredCell, speed, paused,
+    selectUnit, clearSelection, sendMoveCommand, toggleDebug, setSpeed, togglePause,
   };
   (window as any).__snapshot = instance;
   return instance;
